@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-04T19:03:19.798Z",
+  "origin": "https://judge-c2c-production.dakshx.workers.dev",
+  "mode": "ACTUAL_HEADLESS_FRONTEND_NO_MOCKS_NO_DIRECT_TEST_API_CALLS",
+  "boundary": "Real daksh1403 account and actual original calibration PRs. One real participant, not an event-scale hackathon. Cloudflare AI quota remains an explicit blocker.",
+  "evaluations": [],
+  "stage": "login",
+  "app": {
+    "slug": "judge-c2c-daksh-codebase-prod",
+    "installationId": 167916563
+  },
+  "status": "FAIL",
+  "failure": "Expected values to be strictly equal:\n\n0 !== 1\n"
+}

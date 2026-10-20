@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-10-04",
+  "updated": "2026-10-05",
   "scope": "Item-level audit of all 714 entries against current code, executed fixture suites and scoped real payment evidence. PASS proves only the recorded verification boundary; it is not production launch approval. External infrastructure and unsupported capabilities remain explicit gaps.",
   "sections": [
     {
@@ -551,7 +551,7 @@
           "requirement": "Approved main merge deploys production",
           "status": "BLOCKED",
           "evidence": [".github/workflows/deploy.yml"],
-          "note": "Approved main was deployed manually with authenticated Wrangler. Protected CI deployment remains disabled until a separately scoped Cloudflare API token is configured in cloudflare-production; manual deployment does not prove the gated CI path.",
+          "note": "The protected main-only cloudflare-production environment has all thirteen nonsecret deployment inputs, verified with paginated GitHub API reads. CLOUDFLARE_API_TOKEN and repository CLOUDFLARE_PRODUCTION_ENABLED are absent. A separately scoped deployment token and enabling the gated CI path remain required; manual production deployment does not prove CI.",
           "verification": {
             "method": "SOURCE_INSPECTION",
             "boundary": "Supported application profile only; this does not attest production operation or every participant workflow."
@@ -561,7 +561,7 @@
           "relatedPR": null,
           "lastValidationState": {
             "status": "BLOCKED",
-            "basis": "Approved main was deployed manually with authenticated Wrangler. Protected CI deployment remains disabled until a separately scoped Cloudflare API token is configured in cloudflare-production; manual deployment does not prove the gated CI path."
+            "basis": "The protected main-only cloudflare-production environment has all thirteen nonsecret deployment inputs, verified with paginated GitHub API reads. CLOUDFLARE_API_TOKEN and repository CLOUDFLARE_PRODUCTION_ENABLED are absent. A separately scoped deployment token and enabling the gated CI path remain required; manual production deployment does not prove CI."
           }
         },
         {
@@ -594,23 +594,25 @@
         {
           "id": "03.01",
           "requirement": "GitHub App production credentials",
-          "status": "BLOCKED",
+          "status": "PASS",
           "evidence": [
             "docs/qa/payment-readiness-report.md",
             "src/github.ts",
-            "docs/qa/current-production-prerequisites.md"
+            "docs/qa/current-production-prerequisites.md",
+            "docs/qa/current-production-app-grants.json",
+            "docs/qa/current-production-original-rehearsal-validation.json"
           ],
-          "note": "Separate production Worker/resources and fresh role/vault/runner secrets are deployed. A separate organization-owned production GitHub App installation/private key must be established through the production frontend; review App credentials are not copied.",
+          "note": "Separate production App judge-c2c-daksh-codebase-prod (installation 167916563) selects repositories and grants contents/PR read, issues/checks write plus implicit metadata read. Original PRs 7/11/9 completed real production GitHub retrieval, isolated execution, persisted artifacts and publication. Private key remains confined to the production vault; no review credential was copied.",
           "verification": {
-            "method": "FIXTURE_TEST",
-            "boundary": "Production configuration isolation fixtures and isolated review operation only; actual production runtime and resource/secret boundary verification require authorized provisioning/deployment."
+            "method": "LIVE_INTEGRATION",
+            "boundary": "One owner account and original frozen payment submissions in the deployed owner-tunnel production profile; AI failures, current Docker outage, event capacity and independent organizations are not certified."
           },
           "assignedAgent": "workflow-infra",
           "defectReference": null,
           "relatedPR": null,
           "lastValidationState": {
-            "status": "BLOCKED",
-            "basis": "Separate production Worker/resources and fresh role/vault/runner secrets are deployed. A separate organization-owned production GitHub App installation/private key must be established through the production frontend; review App credentials are not copied."
+            "status": "PASS",
+            "basis": "Separate production App judge-c2c-daksh-codebase-prod (installation 167916563) selects repositories and grants contents/PR read, issues/checks write plus implicit metadata read. Original PRs 7/11/9 completed real production GitHub retrieval, isolated execution, persisted artifacts and publication. Private key remains confined to the production vault; no review credential was copied."
           }
         },
         {
@@ -644,19 +646,21 @@
             "src/github.ts",
             "src/runner.ts",
             "AGENTS.md",
-            "docs/qa/current-production-prerequisites.md"
+            "docs/qa/current-production-prerequisites.md",
+            "docs/qa/current-production-app-grants.json",
+            "docs/qa/current-production-original-rehearsal-validation.json"
           ],
-          "note": "Evaluation tokens are repository-scoped and downscoped. Live review App installation nevertheless selects all repositories and grants excess pull_requests:write, repository_hooks:write and workflows:write permissions. Owner grant reduction and separate production installation verification remain required.",
+          "note": "Fresh production App has selected-repository access and required contents/PR read, issues/checks write. The old review App still selects all repositories and grants excess pull_requests:write, repository_hooks:write and workflows:write. Downscoped evaluation tokens do not close owner-grant cleanup. Chrome permission was denied; no owner grants changed.",
           "verification": {
             "method": "LIVE_INTEGRATION",
-            "boundary": "Authenticated gh inspected actual organization installation permissions; owner grants were not changed."
+            "boundary": "One owner account and original frozen payment submissions in the deployed owner-tunnel production profile; AI failures, current Docker outage, event capacity and independent organizations are not certified."
           },
           "assignedAgent": "workflow-infra",
           "defectReference": null,
           "relatedPR": null,
           "lastValidationState": {
             "status": "PARTIAL",
-            "basis": "Evaluation tokens are repository-scoped and downscoped. Live review App installation nevertheless selects all repositories and grants excess pull_requests:write, repository_hooks:write and workflows:write permissions. Owner grant reduction and separate production installation verification remain required."
+            "basis": "Fresh production App has selected-repository access and required contents/PR read, issues/checks write. The old review App still selects all repositories and grants excess pull_requests:write, repository_hooks:write and workflows:write. Downscoped evaluation tokens do not close owner-grant cleanup. Chrome permission was denied; no owner grants changed."
           }
         },
         {
@@ -6038,23 +6042,28 @@
         {
           "id": "22.02",
           "requirement": "Isolation architecture",
-          "status": "BLOCKED",
+          "status": "PASS",
           "evidence": [
             "src/local-docker.ts",
             "docs/local-docker-runner.md",
-            "docs/qa/current-production-prerequisites.md"
+            "docs/qa/current-production-prerequisites.md",
+            "docs/qa/current-production-app-grants.json",
+            "docs/qa/current-production-original-rehearsal-validation.json",
+            "docs/qa/current-production-pr8-retry.json",
+            "docs/qa/current-production-pr8-retry-decisions.json",
+            "docs/qa/current-production-runner-restored.json"
           ],
-          "note": "Production owner-tunnel runner canary and guest isolation profile are verified. The complete production GitHub App \u2192 participant PR \u2192 sandbox/evidence trust boundary awaits fresh App setup and actual production PR evaluation; this is not blocked by merge authorization.",
+          "note": "The owner-tunnel production profile executed the original payment submissions against frozen baseline/head in isolated guests. PRs 7/11 have trusted criteria PASS; PR9 retains protected-test failure. Protected execution/evidence/report downloads match stored SHA-256 and byte lengths. This verifies the supported trust boundary, not continuously available or event-scale execution; After the owner restarted Docker, the signed runner canary passed and a new PR8 attempt correctly produced PARTIAL with retry-bounded FAIL; its prior RUNNER_UNAVAILABLE history is retained.",
           "verification": {
-            "method": "FIXTURE_TEST",
-            "boundary": "Production configuration isolation fixtures and isolated review operation only; actual production runtime and resource/secret boundary verification require authorized provisioning/deployment."
+            "method": "LIVE_INTEGRATION",
+            "boundary": "One owner account and original frozen payment submissions in the deployed owner-tunnel production profile; AI failures, event capacity and independent organizations are not certified."
           },
           "assignedAgent": "evaluation-security-performance",
           "defectReference": null,
           "relatedPR": null,
           "lastValidationState": {
-            "status": "BLOCKED",
-            "basis": "Production owner-tunnel runner canary and guest isolation profile are verified. The complete production GitHub App \u2192 participant PR \u2192 sandbox/evidence trust boundary awaits fresh App setup and actual production PR evaluation; this is not blocked by merge authorization."
+            "status": "PASS",
+            "basis": "The owner-tunnel production profile executed the original payment submissions against frozen baseline/head in isolated guests. PRs 7/11 have trusted criteria PASS; PR9 retains protected-test failure. Protected execution/evidence/report downloads match stored SHA-256 and byte lengths. This verifies the supported trust boundary, not continuously available or event-scale execution; After the owner restarted Docker, the signed runner canary passed and a new PR8 attempt correctly produced PARTIAL with retry-bounded FAIL; its prior RUNNER_UNAVAILABLE history is retained."
           }
         },
         {
@@ -10420,7 +10429,7 @@
             "src/workflow.ts",
             "docs/qa/current-production-prerequisites.md"
           ],
-          "note": "Eight focused capacity/runtime tests passed, including 24 contenders across two real local Worker isolates sharing D1, crash recovery, stale-owner fencing, prepare backoff, supersession and D1 write recovery. Actual multi-host event-scale deployment and provider budget are not verified.",
+          "note": "Existing local two-isolate/24-contender runtime tests passed. Owner target is 100\u2013150 teams in one organization with a possible deadline burst; use 150 simultaneous submissions as a conservative target. No 150-submission deployed rehearsal, measured throughput/latency/provider budget or multi-host runner capacity is proven. The restored owner runner passes bounded canary/calibration checks; AI quota remains exhausted and no event-scale throughput is measured.",
           "verification": {
             "method": "LOCAL_EXECUTION",
             "boundary": "Two local Worker isolates and real durable engine; not deployed event-scale production capacity."
@@ -10430,7 +10439,7 @@
           "relatedPR": null,
           "lastValidationState": {
             "status": "PARTIAL",
-            "basis": "Eight focused capacity/runtime tests passed, including 24 contenders across two real local Worker isolates sharing D1, crash recovery, stale-owner fencing, prepare backoff, supersession and D1 write recovery. Actual multi-host event-scale deployment and provider budget are not verified."
+            "basis": "Existing local two-isolate/24-contender runtime tests passed. Owner target is 100\u2013150 teams in one organization with a possible deadline burst; use 150 simultaneous submissions as a conservative target. No 150-submission deployed rehearsal, measured throughput/latency/provider budget or multi-host runner capacity is proven. The restored owner runner passes bounded canary/calibration checks; AI quota remains exhausted and no event-scale throughput is measured."
           }
         },
         {
@@ -10644,7 +10653,7 @@
             "docs/local-docker-runner.md",
             "docs/qa/current-production-prerequisites.md"
           ],
-          "note": "Owner explicitly selected a Mac-hosted temporary tunnel rather than a managed permanent runner. Its bounded queue/isolated canary works; event warm-capacity/provider-budget planning and deployed event-scale validation remain unproven.",
+          "note": "The selected owner Mac/tunnel profile has previously executed real isolated production submissions, and was restored after the owner restarted Docker; the signed canary and PR8 objective retry passed their expected calibration checks. The 100\u2013150-team single-organization event needs measured runner/provider throughput, warm-capacity and a bounded deadline-burst budget; these remain unproven.",
           "verification": {
             "method": "FIXTURE_TEST",
             "boundary": "Production configuration isolation fixtures and isolated review operation only; actual production runtime and resource/secret boundary verification require authorized provisioning/deployment."
@@ -10654,7 +10663,7 @@
           "relatedPR": null,
           "lastValidationState": {
             "status": "BLOCKED",
-            "basis": "Owner explicitly selected a Mac-hosted temporary tunnel rather than a managed permanent runner. Its bounded queue/isolated canary works; event warm-capacity/provider-budget planning and deployed event-scale validation remain unproven."
+            "basis": "The selected owner Mac/tunnel profile has previously executed real isolated production submissions, and was restored after the owner restarted Docker; the signed canary and PR8 objective retry passed their expected calibration checks. The 100\u2013150-team single-organization event needs measured runner/provider throughput, warm-capacity and a bounded deadline-burst budget; these remain unproven."
           }
         },
         {
@@ -12915,7 +12924,7 @@
             "migrations/0001_foundation.sql",
             "docs/qa/current-real-participant-frontend.json"
           ],
-          "note": "Current organization console is verified for the existing isolated review organization and one real GitHub participant account. Multiple independently deployed organizations/events and their production isolation are not proven; merging alone does not establish this capability.",
+          "note": "The real production and isolated review frontends exercise one GitHub organization and one owner account. The owner event target is one organization; multiple independent organizations remain an unproven product requirement rather than an event requirement. No deployed multi-organization isolation claim is made.",
           "verification": {
             "method": "LIVE_INTEGRATION",
             "boundary": "Real review frontend and existing registered organization/team; not multiple organizations or independent participants."
@@ -12925,7 +12934,7 @@
           "relatedPR": null,
           "lastValidationState": {
             "status": "PARTIAL",
-            "basis": "Current organization console is verified for the existing isolated review organization and one real GitHub participant account. Multiple independently deployed organizations/events and their production isolation are not proven; merging alone does not establish this capability."
+            "basis": "The real production and isolated review frontends exercise one GitHub organization and one owner account. The owner event target is one organization; multiple independent organizations remain an unproven product requirement rather than an event requirement. No deployed multi-organization isolation claim is made."
           }
         },
         {
@@ -16183,23 +16192,28 @@
         {
           "id": "51.14",
           "requirement": "Safe objective execution",
-          "status": "BLOCKED",
+          "status": "PASS",
           "evidence": [
             "docs/qa/payment-calibration-evidence.json",
             "docs/qa/docker-evidence.json",
-            "docs/qa/current-production-prerequisites.md"
+            "docs/qa/current-production-prerequisites.md",
+            "docs/qa/current-production-app-grants.json",
+            "docs/qa/current-production-original-rehearsal-validation.json",
+            "docs/qa/current-production-pr8-retry.json",
+            "docs/qa/current-production-pr8-retry-decisions.json",
+            "docs/qa/current-production-runner-restored.json"
           ],
-          "note": "Production signed runner canary passed with isolated baseline FAIL \u2192 canary PASS; original PR calibrations passed in isolated review. Actual production participant PR/objective execution awaits fresh production GitHub App setup. Cloudflare AI quota is exhausted and remains explicitly UNVERIFIED.",
+          "note": "Original payment PRs 7/11 ran production trusted probes with baseline FAIL to submission PASS; PR9 preserves mandatory protected-test violation. Persisted protected artifacts were downloaded and integrity checked. The original PR8 unavailable attempt stays UNVERIFIED; its new immutable retry produced PARTIAL with trusted retry-bounded FAIL. Acceptance was denied and a changes-requested decision persisted. AI is FAILED and not used to waive objective criteria. Safe execution is verified for this bounded owner-run rehearsal, not event capacity.",
           "verification": {
-            "method": "FIXTURE_TEST",
-            "boundary": "Production configuration isolation fixtures and isolated review operation only; actual production runtime and resource/secret boundary verification require authorized provisioning/deployment."
+            "method": "LIVE_INTEGRATION",
+            "boundary": "One owner account and original frozen payment submissions in the deployed owner-tunnel production profile; AI failures, event capacity and independent organizations are not certified."
           },
           "assignedAgent": "evaluation-security-performance",
           "defectReference": null,
           "relatedPR": null,
           "lastValidationState": {
-            "status": "BLOCKED",
-            "basis": "Production signed runner canary passed with isolated baseline FAIL \u2192 canary PASS; original PR calibrations passed in isolated review. Actual production participant PR/objective execution awaits fresh production GitHub App setup. Cloudflare AI quota is exhausted and remains explicitly UNVERIFIED."
+            "status": "PASS",
+            "basis": "Original payment PRs 7/11 ran production trusted probes with baseline FAIL to submission PASS; PR9 preserves mandatory protected-test violation. Persisted protected artifacts were downloaded and integrity checked. The original PR8 unavailable attempt stays UNVERIFIED; its new immutable retry produced PARTIAL with trusted retry-bounded FAIL. Acceptance was denied and a changes-requested decision persisted. AI is FAILED and not used to waive objective criteria. Safe execution is verified for this bounded owner-run rehearsal, not event capacity."
           }
         },
         {

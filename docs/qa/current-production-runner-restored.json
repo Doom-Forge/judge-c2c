@@ -1,0 +1,98 @@
+{
+  "at": "2026-10-05T02:41:47.602Z",
+  "origin": "https://judge-c2c-production.dakshx.workers.dev",
+  "mode": "ACTUAL_FRONTEND_BUTTONS",
+  "boundary": "Production deployment diagnostics only. Synthetic diagnostic contract; no production participant evaluation or GitHub App connection claimed.",
+  "newAppRequired": false,
+  "runner": {
+    "http": 200,
+    "synthetic": true,
+    "status": "COMPLETED",
+    "results": [
+      {
+        "label": "baseline",
+        "result": {
+          "requestHash": "4a4e8d46b92817994295e7cb9c5c4b01b19aaac8876b8b1600c2cedb9efbdf01",
+          "commit": "0000000000000000000000000000000000000000",
+          "contractHash": "b97ed8576b7dbe81224a525a9f1704c96dc44d19ad589833be4cb80f2c1a9ab1",
+          "version": "node-http-v1.3.0",
+          "image": "docker-local@sha256:669a7c4162f97d15fe6c020f4947243804fa3270e5187238ca1ff81a5b860110",
+          "runtime": "v24.21.0; docker-local-v1",
+          "metrics": {
+            "startupMs": 435,
+            "tools": {
+              "node": "v24.21.0",
+              "npm": "11.19.0"
+            },
+            "resources": [
+              {
+                "scope": "service",
+                "sampledAt": "2026-10-05T02:41:50.518Z",
+                "cpuUsageUsec": 155788,
+                "memoryBytes": 54902784,
+                "pids": 8
+              }
+            ]
+          },
+          "startedAt": "2026-10-05T02:41:49.819Z",
+          "finishedAt": "2026-10-05T02:41:50.610Z",
+          "checks": [
+            {
+              "id": "ready",
+              "kind": "acceptance",
+              "status": "FAIL",
+              "exitCode": null,
+              "durationMs": 0,
+              "stdout": "",
+              "stderr": "",
+              "detail": "Required service entrypoint is missing."
+            }
+          ]
+        }
+      },
+      {
+        "label": "submission",
+        "result": {
+          "requestHash": "d29fdb360656f95f55b9add8571ea35802636c70b389c1a586529e4275dba41d",
+          "commit": "1111111111111111111111111111111111111111",
+          "contractHash": "b97ed8576b7dbe81224a525a9f1704c96dc44d19ad589833be4cb80f2c1a9ab1",
+          "version": "node-http-v1.3.0",
+          "image": "docker-local@sha256:669a7c4162f97d15fe6c020f4947243804fa3270e5187238ca1ff81a5b860110",
+          "runtime": "v24.21.0; docker-local-v1",
+          "metrics": {
+            "startupMs": 270,
+            "tools": {
+              "node": "v24.21.0",
+              "npm": "11.19.0"
+            },
+            "resources": [
+              {
+                "scope": "service",
+                "sampledAt": "2026-10-05T02:41:51.464Z",
+                "cpuUsageUsec": 244743,
+                "memoryBytes": 37937152,
+                "pids": 15
+              }
+            ]
+          },
+          "startedAt": "2026-10-05T02:41:50.702Z",
+          "finishedAt": "2026-10-05T02:41:51.549Z",
+          "checks": [
+            {
+              "id": "ready",
+              "kind": "acceptance",
+              "status": "PASS",
+              "exitCode": null,
+              "durationMs": 236,
+              "stdout": "{\"ready\":true}",
+              "stderr": "",
+              "detail": "Trusted HTTP acceptance ready: PASS. Expected status 200; observed 200."
+            }
+          ]
+        }
+      }
+    ],
+    "visibleMessage": "Docker runner verified: missing baseline FAIL → trusted canary PASS. Synthetic diagnostic, not a participant PR evaluation."
+  },
+  "status": "PASS"
+}

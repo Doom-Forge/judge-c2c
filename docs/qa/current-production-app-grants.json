@@ -1,0 +1,31 @@
+{
+  "checkedAt": "2026-10-05",
+  "installations": [
+    {
+      "app_slug": "judge-c2c-daksh-codebase",
+      "id": 167005353,
+      "permissions": {
+        "checks": "write",
+        "contents": "read",
+        "issues": "write",
+        "metadata": "read",
+        "pull_requests": "write",
+        "repository_hooks": "write",
+        "workflows": "write"
+      },
+      "repository_selection": "all"
+    },
+    {
+      "app_slug": "judge-c2c-daksh-codebase-prod",
+      "id": 167916563,
+      "permissions": {
+        "checks": "write",
+        "contents": "read",
+        "issues": "write",
+        "metadata": "read",
+        "pull_requests": "read"
+      },
+      "repository_selection": "selected"
+    }
+  ]
+}

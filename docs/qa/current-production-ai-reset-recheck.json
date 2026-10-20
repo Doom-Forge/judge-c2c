@@ -1,0 +1,65 @@
+{
+  "at": "2026-10-05T02:21:59.268Z",
+  "origin": "https://judge-c2c-production.dakshx.workers.dev",
+  "mode": "ACTUAL_FRONTEND_BUTTONS",
+  "boundary": "Production deployment diagnostics only. Synthetic diagnostic contract; no production participant evaluation or GitHub App connection claimed.",
+  "newAppRequired": false,
+  "ai": {
+    "http": 200,
+    "synthetic": true,
+    "status": "FAILED",
+    "summary": "Evidence-backed review completed. Only trusted execution evidence verifies functional behavior; missing checks remain UNVERIFIED. AI inference is not proof.",
+    "trace": {
+      "policy": "requirements-and-approach-v15",
+      "provider": "cloudflare",
+      "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "inputHash": "4e9688f48df05cd91ad35585ad327b7bda23f32d7dacc0bafeefd43541eea7f4",
+      "durationMs": 276,
+      "attempts": 1,
+      "attemptFailures": [
+        "CLOUDFLARE_AI_QUOTA_EXHAUSTED"
+      ],
+      "failureCode": "CLOUDFLARE_AI_QUOTA_EXHAUSTED",
+      "contextBudget": {
+        "version": "bounded-review-context-v1",
+        "contextBytes": 4192,
+        "maxContextBytes": 48000,
+        "reservedInputBytes": 9662,
+        "reservedOutputTokens": 4096,
+        "estimatedInputTokens": 3464,
+        "inputTokenEstimateMethod": "UTF-8 byte count divided by four; estimate only",
+        "omittedEvidenceIds": [],
+        "omittedSourcePaths": [],
+        "omittedDiffPaths": [],
+        "finalContextBytes": 4192
+      },
+      "evaluationPlan": {
+        "version": "adaptive-review-v1",
+        "depth": "STANDARD",
+        "reviewAreas": [
+          "correctness",
+          "documentation",
+          "policy",
+          "requirements",
+          "solution-approach",
+          "testing"
+        ],
+        "reasons": [
+          "All frozen contract criteria remain required at every review depth.",
+          "Authoritative execution checks are unchanged by this advisory plan.",
+          "Changed paths contain documentation only.",
+          "Functional criteria or trusted runner checks require objective verification."
+        ],
+        "maxContextBytes": 48000,
+        "maxChangedFiles": 30
+      },
+      "modelRouting": {
+        "version": "server-model-routing-v1",
+        "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        "reason": "AI_MODEL retained; no depth override is configured."
+      }
+    },
+    "visibleMessage": "Cloudflare AI daily quota exhausted. Wait for the quota reset or enable Workers Paid. AI analysis remains UNVERIFIED; objective evidence is preserved."
+  },
+  "status": "OBSERVED"
+}

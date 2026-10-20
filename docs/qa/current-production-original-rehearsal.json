@@ -1,0 +1,492 @@
+{
+  "at": "2026-10-04T19:10:35.066Z",
+  "origin": "https://judge-c2c-production.dakshx.workers.dev",
+  "mode": "ACTUAL_HEADLESS_FRONTEND_NO_MOCKS_NO_DIRECT_TEST_API_CALLS",
+  "boundary": "Real daksh1403 account and actual original calibration PRs. One real participant, not an event-scale hackathon. Cloudflare AI quota remains an explicit blocker.",
+  "evaluations": [
+    {
+      "pr": 11,
+      "runId": "b9488dfb6314d343acae4e09dc7025236147dce2ee6714cc1e60838c1042c2cc",
+      "state": "COMPLETED",
+      "ai": "FAILED",
+      "head": "749b414d1036a0c1b734af807e681e4894d2345e",
+      "requirements": [
+        {
+          "requirementId": "payment-retry",
+          "mandatory": true,
+          "status": "PASS",
+          "needsAttention": false,
+          "criteria": [
+            {
+              "criterionId": "retry-transient",
+              "status": "PASS",
+              "evidenceIds": [
+                "criterion-retry-transient"
+              ],
+              "reason": "A relevant objective criterion check passed."
+            },
+            {
+              "criterionId": "retry-bounded",
+              "status": "PASS",
+              "evidenceIds": [
+                "criterion-retry-bounded"
+              ],
+              "reason": "A relevant objective criterion check passed."
+            },
+            {
+              "criterionId": "retry-permanent",
+              "status": "PASS",
+              "evidenceIds": [
+                "criterion-retry-permanent"
+              ],
+              "reason": "A relevant objective criterion check passed."
+            },
+            {
+              "criterionId": "retry-invalid",
+              "status": "PASS",
+              "evidenceIds": [
+                "criterion-retry-invalid"
+              ],
+              "reason": "A relevant objective criterion check passed."
+            }
+          ]
+        }
+      ],
+      "aiFailure": "CLOUDFLARE_AI_QUOTA_EXHAUSTED",
+      "publication": "PUBLISHED",
+      "evidence": "[{\"claim\":\"Exact baseline-to-head comparison: 3 changed files. This confirms change metadata, not functionality.\",\"id\":\"diff\",\"kind\":\"diff\",\"status\":\"PASS\"},{\"claim\":\"Exact baseline/head source retrieved for contextual inspection only; presence is not functional proof.\",\"id\":\"context-source-1\",\"kind\":\"source\",\"path\":\"retry.test.mjs\",\"status\":\"PASS\"},{\"claim\":\"Exact baseline/head source retrieved for contextual inspection only; presence is not functional proof.\",\"id\":\"context-source-2\",\"kind\":\"source\",\"path\":\"README.md\",\"status\":\"PASS\"},{\"claim\":\"Exact baseline/head source retrieved for contextual inspection only; presence is not functional proof.\",\"id\":\"context-source-3\",\"kind\":\"source\",\"path\":\"server.mjs\",\"status\":\"PASS\"},{\"claim\":\"Protected path unchanged: server.test.mjs\",\"id\":\"policy-4\",\"kind\":\"policy\",\"path\":\"server.test.mjs\",\"status\":\"PASS\"},{\"baselineStatus\":\"FAIL\",\"claim\":\"Trusted HTTP acceptance retry-transient: PASS. Expected status 200; observed 200. Baseline FAIL → submission PASS. Execution provenance: baseline BYPASS from run b9488dfb6314d343acae4e09dc7025236147dce2ee6714cc1e60838c1042c2cc, execution c14bc588-008d-4046-9a6c-c0259972b56f, cache 664dbd3e0125d899e222253dca6d47649e477a887971488b7e9b706111681fc5; submission BYPASS from run b9488dfb6314d343acae4e09dc7025236147dce2ee6714cc1e60838c1042c2cc, execution a8b18c12-442f-41ad-a8ec-59cb08fa1bae, cache 03afca913e1e13235cf6321394abcc63557bcb0e5ae398604f74df7dee0e712c.\",\"criterionId\":\"retry-transient\",\"id\":\"criterion-retry-transient\",\"kind\":\"execution\",\"status\":\"PASS\"},{\"baselineStatus\":\"FAIL\",\"claim\":\"Trusted HTTP acceptance retry-bounded: PASS. Expected status 200; observed 200. Baseline FAIL → submission PASS. Execution provenance: baseline BYPASS from run b9488dfb6314d343acae4e09dc7025236147dce2ee6714cc1e60838c1042c2cc, execution c14bc588-008d-4046-9a6c-c0259972b56f, cache 664dbd3e0125d899e222253dca6d47649e477a887971488b7e9b706111681fc5; submission BYPASS from run b9488dfb6314d343acae4e09dc7025236147dce2ee6714cc1e60838c1042c2cc, execution a8b18c12-442f-41ad-a8ec-59cb08fa1bae, cache 03afca913e1e13235cf6321394abcc63557bcb0e5ae398604f74df7dee0e712c.\",\"criterionId\":\"retry-bounded\",\"id\":\"criterion-retry-bounded\",\"kind\":\"execution\",\"status\":\"PASS\"},{\"baselineStatus\":\"PASS\",\"claim\":\"Trusted HTTP acceptance retry-permanent: PASS. Expected status 200; observed 200. Baseline PASS → submission PASS. Execution provenance: baseline BYPASS from run b9488dfb6314d343acae4e09dc7025236147dce2ee6714cc1e60838c1042c2cc, execution c14bc588-008d-4046-9a6c-c0259972b56f, cache 664dbd3e0125d899e222253dca6d47649e477a887971488b7e9b706111681fc5; submission BYPASS from run b9488dfb6314d343acae4e09dc7025236147dce2ee6714cc1e60838c1042c2cc, execution a8b18c12-442f-41ad-a8ec-59cb08fa1bae, cache 03afca913e1e13235cf6321394abcc63557bcb0e5ae398604f74df7dee0e712c.\",\"criterionId\":\"retry-permanent\",\"id\":\"criterion-retry-permanent\",\"kind\":\"execution\",\"status\":\"PASS\"},{\"baselineStatus\":\"PASS\",\"claim\":\"Trusted HTTP acceptance retry-invalid: PASS. Expected status 400; observed 400. Baseline PASS → submission PASS. Execution provenance: baseline BYPASS from run b9488dfb6314d343acae4e09dc7025236147dce2ee6714cc1e60838c1042c2cc, execution c14bc588-008d-4046-9a6c-c0259972b56f, cache 664dbd3e0125d899e222253dca6d47649e477a887971488b7e9b706111681fc5; submission BYPASS from run b9488dfb6314d343acae4e09dc7025236147dce2ee6714cc1e60838c1042c2cc, execution a8b18c12-442f-41ad-a8ec-59cb08fa1bae, cache 03afca913e1e13235cf6321394abcc63557bcb0e5ae398604f74df7dee0e712c.\",\"criterionId\":\"retry-invalid\",\"id\":\"criterion-retry-invalid\",\"kind\":\"execution\",\"status\":\"PASS\"},{\"baselineStatus\":\"PASS\",\"claim\":\"build: Configured build command passed. Baseline PASS → submission PASS. Repository commands are supplemental evidence.\",\"id\":\"execution-build\",\"kind\":\"execution\",\"status\":\"PASS\"},{\"baselineStatus\":\"PASS\",\"claim\":\"test: Configured test command passed. Baseline PASS → submission PASS. Repository commands are supplemental evidence.\",\"id\":\"execution-repository-tests\",\"kind\":\"execution\",\"status\":\"PASS\"},{\"baselineStatus\":\"PASS\",\"claim\":\"lint: Configured lint command passed. Baseline PASS → submission PASS. Repository commands are supplemental evidence.\",\"id\":\"execution-lint\",\"kind\":\"execution\",\"status\":\"PASS\"}]",
+      "attention": [
+        {
+          "code": "AI_UNAVAILABLE",
+          "what": "AI review is FAILED.",
+          "why": "Contextual engineering review has not completed; objective results remain authoritative.",
+          "inspect": [
+            "ai-trace"
+          ],
+          "action": "Inspect the reason, review manually or retry after recovery."
+        }
+      ]
+    }
+  ],
+  "stage": "evaluate-pr-11",
+  "app": {
+    "slug": "judge-c2c-daksh-codebase-prod",
+    "installationId": 167916563
+  },
+  "team": {
+    "id": "team-045b0430-7b25-4a33-a5e3-f9ff76249e65",
+    "name": "Production rehearsal — daksh1403",
+    "hackathon_id": "initial",
+    "status": "ACTIVE",
+    "metadata": {},
+    "registration_source": "organizer",
+    "created_at": "2026-10-04 19:04:46",
+    "updated_at": "2026-10-04 19:04:46",
+    "member_count": 1,
+    "repository_count": 1,
+    "issue_count": 1,
+    "submission_count": 7,
+    "github_members": "daksh1403"
+  },
+  "submissions": [
+    {
+      "repository_id": 1371407339,
+      "pr_number": 16,
+      "id": "1371407339:16",
+      "head_sha": "f59003af2e664f7dbce4a363f14272be148cad94",
+      "latest_run_id": null,
+      "github_updated_at": "2026-10-04T08:45:30Z",
+      "closed": 0,
+      "team_id": "team-045b0430-7b25-4a33-a5e3-f9ff76249e65",
+      "author_id": 166613207,
+      "author_login": "daksh1403",
+      "base_sha": "167b52faed920c19b649a65c3f3cc2eb131a7eff",
+      "issue_numbers": [],
+      "assignment_ids": [],
+      "status": "NEEDS_ISSUE_MAPPING",
+      "mapping_reason": "No active assigned issue is linked to this PR.",
+      "override": null,
+      "pr_snapshot": {
+        "base": {
+          "repo": {
+            "id": 1371407339
+          },
+          "sha": "167b52faed920c19b649a65c3f3cc2eb131a7eff"
+        },
+        "body": "References #15\n\nIsolated review-only fixture, no real participant score/completion/final credit. Optional bounded retry is judged against the unchanged reference baseline.",
+        "draft": false,
+        "foreignLinks": [],
+        "head": {
+          "sha": "f59003af2e664f7dbce4a363f14272be148cad94"
+        },
+        "linkedIssues": [
+          15
+        ],
+        "number": 16,
+        "relatedPR": null,
+        "relationship": "PRIMARY",
+        "state": "open",
+        "title": "Synthetic NOT_SCORED functional attribution and denial proof",
+        "updated_at": "2026-10-04T08:45:30Z",
+        "user": {
+          "id": 166613207,
+          "login": "daksh1403"
+        }
+      },
+      "created_at": "2026-10-04 19:03:02",
+      "resolution_revision": 2,
+      "team_name": "Production rehearsal — daksh1403",
+      "full_name": "Daksh-Codebase/payment-engine",
+      "evaluation_state": null,
+      "evaluation_head": null,
+      "ai_status": null
+    },
+    {
+      "repository_id": 1371407339,
+      "pr_number": 14,
+      "id": "1371407339:14",
+      "head_sha": "749b414d1036a0c1b734af807e681e4894d2345e",
+      "latest_run_id": null,
+      "github_updated_at": "2026-10-04T07:49:57Z",
+      "closed": 0,
+      "team_id": "team-045b0430-7b25-4a33-a5e3-f9ff76249e65",
+      "author_id": 166613207,
+      "author_login": "daksh1403",
+      "base_sha": "167b52faed920c19b649a65c3f3cc2eb131a7eff",
+      "issue_numbers": [],
+      "assignment_ids": [],
+      "status": "NEEDS_ISSUE_MAPPING",
+      "mapping_reason": "No active assigned issue is linked to this PR.",
+      "override": null,
+      "pr_snapshot": {
+        "base": {
+          "repo": {
+            "id": 1371407339
+          },
+          "sha": "167b52faed920c19b649a65c3f3cc2eb131a7eff"
+        },
+        "body": "References #12\n\nIsolated review fixture at the exact original payment reference head. This tests baseline cache provenance only; no completion decision or final credit is requested.",
+        "draft": false,
+        "foreignLinks": [],
+        "head": {
+          "sha": "749b414d1036a0c1b734af807e681e4894d2345e"
+        },
+        "linkedIssues": [
+          12
+        ],
+        "number": 14,
+        "relatedPR": null,
+        "relationship": "PRIMARY",
+        "state": "open",
+        "title": "Synthetic NOT_SCORED cache proof HIT",
+        "updated_at": "2026-10-04T07:49:57Z",
+        "user": {
+          "id": 166613207,
+          "login": "daksh1403"
+        }
+      },
+      "created_at": "2026-10-04 19:03:06",
+      "resolution_revision": 2,
+      "team_name": "Production rehearsal — daksh1403",
+      "full_name": "Daksh-Codebase/payment-engine",
+      "evaluation_state": null,
+      "evaluation_head": null,
+      "ai_status": null
+    },
+    {
+      "repository_id": 1371407339,
+      "pr_number": 13,
+      "id": "1371407339:13",
+      "head_sha": "749b414d1036a0c1b734af807e681e4894d2345e",
+      "latest_run_id": null,
+      "github_updated_at": "2026-10-04T07:49:25Z",
+      "closed": 0,
+      "team_id": "team-045b0430-7b25-4a33-a5e3-f9ff76249e65",
+      "author_id": 166613207,
+      "author_login": "daksh1403",
+      "base_sha": "167b52faed920c19b649a65c3f3cc2eb131a7eff",
+      "issue_numbers": [],
+      "assignment_ids": [],
+      "status": "NEEDS_ISSUE_MAPPING",
+      "mapping_reason": "No active assigned issue is linked to this PR.",
+      "override": null,
+      "pr_snapshot": {
+        "base": {
+          "repo": {
+            "id": 1371407339
+          },
+          "sha": "167b52faed920c19b649a65c3f3cc2eb131a7eff"
+        },
+        "body": "References #12\n\nIsolated review fixture at the exact original payment reference head. This tests baseline cache provenance only; no completion decision or final credit is requested.",
+        "draft": false,
+        "foreignLinks": [],
+        "head": {
+          "sha": "749b414d1036a0c1b734af807e681e4894d2345e"
+        },
+        "linkedIssues": [
+          12
+        ],
+        "number": 13,
+        "relatedPR": null,
+        "relationship": "PRIMARY",
+        "state": "open",
+        "title": "Synthetic NOT_SCORED cache proof MISS",
+        "updated_at": "2026-10-04T07:49:25Z",
+        "user": {
+          "id": 166613207,
+          "login": "daksh1403"
+        }
+      },
+      "created_at": "2026-10-04 19:03:09",
+      "resolution_revision": 2,
+      "team_name": "Production rehearsal — daksh1403",
+      "full_name": "Daksh-Codebase/payment-engine",
+      "evaluation_state": null,
+      "evaluation_head": null,
+      "ai_status": null
+    },
+    {
+      "repository_id": 1371407339,
+      "pr_number": 11,
+      "id": "1371407339:11",
+      "head_sha": "749b414d1036a0c1b734af807e681e4894d2345e",
+      "latest_run_id": "b9488dfb6314d343acae4e09dc7025236147dce2ee6714cc1e60838c1042c2cc",
+      "github_updated_at": "2026-10-04T03:07:21Z",
+      "closed": 0,
+      "team_id": "team-045b0430-7b25-4a33-a5e3-f9ff76249e65",
+      "author_id": 166613207,
+      "author_login": "daksh1403",
+      "base_sha": "65cb717281eaa2aced69dfaa68ac06c6d540ce2a",
+      "issue_numbers": [
+        6
+      ],
+      "assignment_ids": [
+        "assignment-a12c92c0-00e0-4696-be75-a9023633f614"
+      ],
+      "status": "VALID",
+      "mapping_reason": "Structured membership, repository eligibility and issue assignments match.",
+      "override": null,
+      "pr_snapshot": {
+        "base": {
+          "repo": {
+            "id": 1371407339
+          },
+          "sha": "65cb717281eaa2aced69dfaa68ac06c6d540ce2a"
+        },
+        "body": "Fixes #6.\n\nControlled pre-launch replay of the existing bounded retry reference solution, using the same frozen baseline and submitted code as PR #7. This checks the current Judge-C2C objective-first grounding policy, real Docker execution, CallMissed review, evidence persistence and GitHub Check publication.\n\nOne real authenticated QA operator; this is an alternate test submission, not a new independent team or scored contribution. No production payment service or credentials are used. Do not merge automatically.\n",
+        "draft": false,
+        "foreignLinks": [],
+        "head": {
+          "sha": "749b414d1036a0c1b734af807e681e4894d2345e"
+        },
+        "linkedIssues": [
+          6
+        ],
+        "number": 11,
+        "relatedPR": null,
+        "relationship": "PRIMARY",
+        "state": "open",
+        "title": "QA current grounding: replay the bounded retry reference solution",
+        "updated_at": "2026-10-04T03:07:21Z",
+        "user": {
+          "id": 166613207,
+          "login": "daksh1403"
+        }
+      },
+      "created_at": "2026-10-04 19:07:00",
+      "resolution_revision": 1,
+      "team_name": "Production rehearsal — daksh1403",
+      "full_name": "Daksh-Codebase/payment-engine",
+      "evaluation_state": "CHECKING",
+      "evaluation_head": "749b414d1036a0c1b734af807e681e4894d2345e",
+      "ai_status": null
+    },
+    {
+      "repository_id": 1371407339,
+      "pr_number": 9,
+      "id": "1371407339:9",
+      "head_sha": "628436f51c897930e2c902c2051c185259ef95c8",
+      "latest_run_id": "cc037dd72574329b265bd84b6549f3fc6cf1512de0301300a8db920837be4164",
+      "github_updated_at": "2026-10-02T13:16:46Z",
+      "closed": 0,
+      "team_id": "team-045b0430-7b25-4a33-a5e3-f9ff76249e65",
+      "author_id": 166613207,
+      "author_login": "daksh1403",
+      "base_sha": "65cb717281eaa2aced69dfaa68ac06c6d540ce2a",
+      "issue_numbers": [
+        6
+      ],
+      "assignment_ids": [
+        "assignment-a12c92c0-00e0-4696-be75-a9023633f614"
+      ],
+      "status": "VALID",
+      "mapping_reason": "Structured membership, repository eligibility and issue assignments match.",
+      "override": null,
+      "pr_snapshot": {
+        "base": {
+          "repo": {
+            "id": 1371407339
+          },
+          "sha": "65cb717281eaa2aced69dfaa68ac06c6d540ce2a"
+        },
+        "body": "Controlled non-scored adversarial rehearsal by the single authenticated QA operator. References #6. The implementation works but protected baseline tests are deliberately replaced with a superficial test, and README includes prompt-injection text. Trusted policy must flag these edits; no claim of independent participant identity.",
+        "draft": false,
+        "foreignLinks": [],
+        "head": {
+          "sha": "628436f51c897930e2c902c2051c185259ef95c8"
+        },
+        "linkedIssues": [
+          6
+        ],
+        "number": 9,
+        "relatedPR": null,
+        "relationship": "PRIMARY",
+        "state": "open",
+        "title": "QA manipulated submission: protected tests weakened despite working feature",
+        "updated_at": "2026-10-02T13:16:46Z",
+        "user": {
+          "id": 166613207,
+          "login": "daksh1403"
+        }
+      },
+      "created_at": "2026-10-04 19:07:05",
+      "resolution_revision": 1,
+      "team_name": "Production rehearsal — daksh1403",
+      "full_name": "Daksh-Codebase/payment-engine",
+      "evaluation_state": "CHECKING",
+      "evaluation_head": "628436f51c897930e2c902c2051c185259ef95c8",
+      "ai_status": null
+    },
+    {
+      "repository_id": 1371407339,
+      "pr_number": 8,
+      "id": "1371407339:8",
+      "head_sha": "4b7fd9245a5c2c615797a864455dc1ca5fda9291",
+      "latest_run_id": "b5dbcab5de6d974bbde89080e821a1962a0df952a38394274c38722e267355a9",
+      "github_updated_at": "2026-10-02T13:15:33Z",
+      "closed": 0,
+      "team_id": "team-045b0430-7b25-4a33-a5e3-f9ff76249e65",
+      "author_id": 166613207,
+      "author_login": "daksh1403",
+      "base_sha": "65cb717281eaa2aced69dfaa68ac06c6d540ce2a",
+      "issue_numbers": [
+        6
+      ],
+      "assignment_ids": [
+        "assignment-a12c92c0-00e0-4696-be75-a9023633f614"
+      ],
+      "status": "VALID",
+      "mapping_reason": "Structured membership, repository eligibility and issue assignments match.",
+      "override": null,
+      "pr_snapshot": {
+        "base": {
+          "repo": {
+            "id": 1371407339
+          },
+          "sha": "65cb717281eaa2aced69dfaa68ac06c6d540ce2a"
+        },
+        "body": "Controlled non-scored rehearsal by the single authenticated QA operator, not an independent participant account. References #6. Temporary retry behavior is present but maxAttempts is intentionally ignored; trusted bounded-retry acceptance must fail. Existing baseline tests are preserved.",
+        "draft": false,
+        "foreignLinks": [],
+        "head": {
+          "sha": "4b7fd9245a5c2c615797a864455dc1ca5fda9291"
+        },
+        "linkedIssues": [
+          6
+        ],
+        "number": 8,
+        "relatedPR": null,
+        "relationship": "PRIMARY",
+        "state": "open",
+        "title": "QA partial submission: retry attempt bound intentionally missing",
+        "updated_at": "2026-10-02T13:15:33Z",
+        "user": {
+          "id": 166613207,
+          "login": "daksh1403"
+        }
+      },
+      "created_at": "2026-10-04 19:07:11",
+      "resolution_revision": 1,
+      "team_name": "Production rehearsal — daksh1403",
+      "full_name": "Daksh-Codebase/payment-engine",
+      "evaluation_state": "CHECKING",
+      "evaluation_head": "4b7fd9245a5c2c615797a864455dc1ca5fda9291",
+      "ai_status": null
+    },
+    {
+      "repository_id": 1371407339,
+      "pr_number": 7,
+      "id": "1371407339:7",
+      "head_sha": "749b414d1036a0c1b734af807e681e4894d2345e",
+      "latest_run_id": "e73ecb15e8342d1b6dfe77d62c9d2ffe6f3606f795009b812b29bb55d46211c0",
+      "github_updated_at": "2026-10-02T12:37:00Z",
+      "closed": 0,
+      "team_id": "team-045b0430-7b25-4a33-a5e3-f9ff76249e65",
+      "author_id": 166613207,
+      "author_login": "daksh1403",
+      "base_sha": "65cb717281eaa2aced69dfaa68ac06c6d540ce2a",
+      "issue_numbers": [
+        6
+      ],
+      "assignment_ids": [
+        "assignment-a12c92c0-00e0-4696-be75-a9023633f614"
+      ],
+      "status": "VALID",
+      "mapping_reason": "Structured membership, repository eligibility and issue assignments match.",
+      "override": null,
+      "pr_snapshot": {
+        "base": {
+          "repo": {
+            "id": 1371407339
+          },
+          "sha": "65cb717281eaa2aced69dfaa68ac06c6d540ce2a"
+        },
+        "body": "Fixes #6.\n\nThis controlled pre-launch submission retries temporary simulated outcomes while stopping on success, permanent failure, the attempt limit or outcome exhaustion. It preserves payment creation, lookup, idempotency and input validation, adds twelve retry edge-case tests and documents the behavior.\n\nValidation: syntax build and all fourteen native Node tests pass. Judge-C2C should independently compare frozen baseline 65cb717281eaa2aced69dfaa68ac06c6d540ce2a against this exact PR head using organizer-owned probes, then publish evidence-backed results.\n\nOne real GitHub operator represents the explicitly named QA team; this is not a claim of multiple real participant identities. Targets the baseline preparation branch while PR #5 awaits human review. No real payment provider or credentials involved.\n",
+        "draft": false,
+        "foreignLinks": [],
+        "head": {
+          "sha": "749b414d1036a0c1b734af807e681e4894d2345e"
+        },
+        "linkedIssues": [
+          6
+        ],
+        "number": 7,
+        "relatedPR": null,
+        "relationship": "PRIMARY",
+        "state": "open",
+        "title": "Rehearsal submission: bounded payment retries with regression preservation",
+        "updated_at": "2026-10-02T12:37:00Z",
+        "user": {
+          "id": 166613207,
+          "login": "daksh1403"
+        }
+      },
+      "created_at": "2026-10-04 19:07:17",
+      "resolution_revision": 1,
+      "team_name": "Production rehearsal — daksh1403",
+      "full_name": "Daksh-Codebase/payment-engine",
+      "evaluation_state": "CHECKING",
+      "evaluation_head": "749b414d1036a0c1b734af807e681e4894d2345e",
+      "ai_status": null
+    }
+  ],
+  "negativeMapping": [
+    {
+      "pr": 16,
+      "status": "NEEDS_ISSUE_MAPPING",
+      "head": "f59003af2e664f7dbce4a363f14272be148cad94"
+    },
+    {
+      "pr": 14,
+      "status": "NEEDS_ISSUE_MAPPING",
+      "head": "749b414d1036a0c1b734af807e681e4894d2345e"
+    },
+    {
+      "pr": 13,
+      "status": "NEEDS_ISSUE_MAPPING",
+      "head": "749b414d1036a0c1b734af807e681e4894d2345e"
+    }
+  ],
+  "status": "FAIL",
+  "failure": "(run.evidence || []).some is not a function"
+}

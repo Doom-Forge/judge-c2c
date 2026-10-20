@@ -1,0 +1,11 @@
+{
+  "at": "2026-10-05T02:42:03.228278+00:00",
+  "approvedMain": "24de5ae84bd51a78f7141bb330d934f4db48bea1",
+  "runtimeSourceComparison": "git diff origin/main -- src public package.json package-lock.json wrangler.jsonc returned empty",
+  "change": "Restore owner tunnel endpoint only; same runtime source, image digest, signing keys and isolated resources",
+  "endpoint": "https://requirements-lay-mine-pool.trycloudflare.com",
+  "versionId": "ed2b9ab2-8451-499b-88b1-8ed0f0b81228",
+  "worker": "judge-c2c-production",
+  "ciEnvironmentVariableUpdated": "PRODUCTION_RUNNER_ENDPOINT",
+  "billingOrFeatureDeployment": false
+}

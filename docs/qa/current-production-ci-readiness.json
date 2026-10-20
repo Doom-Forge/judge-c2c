@@ -1,0 +1,35 @@
+{
+  "at": "2026-10-05T02:25:57.763481+00:00",
+  "source": "Authenticated paginated gh api reads; secret names only, never values",
+  "environment": "cloudflare-production",
+  "variableNames": [
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_WORKERS_SUBDOMAIN",
+    "PRODUCTION_AI_MODEL",
+    "PRODUCTION_AI_PROVIDER",
+    "PRODUCTION_ARTIFACT_KV_ID",
+    "PRODUCTION_DATABASE_ID",
+    "PRODUCTION_ORG_DATABASE_ID",
+    "PRODUCTION_ORG_NAME",
+    "PRODUCTION_ORG_PUBLIC_ORIGIN",
+    "PRODUCTION_RUNNER_ENDPOINT",
+    "PRODUCTION_RUNNER_IMAGE",
+    "PRODUCTION_RUNNER_MODE",
+    "PUBLIC_ORIGIN"
+  ],
+  "secretNames": [],
+  "branchPolicies": [
+    {
+      "name": "main",
+      "type": "branch"
+    }
+  ],
+  "deploymentEnabled": false,
+  "blockers": [
+    "CLOUDFLARE_API_TOKEN environment secret absent",
+    "CLOUDFLARE_PRODUCTION_ENABLED repository variable absent"
+  ],
+  "mutations": [
+    "After owner Docker restart, PRODUCTION_RUNNER_ENDPOINT updated to the replacement signed owner tunnel. No enablement or token changes."
+  ]
+}
