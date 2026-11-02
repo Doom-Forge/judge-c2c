@@ -976,7 +976,15 @@ async function repositories() {
   try {
     const data = await get('/api/repositories');
     $('#content').innerHTML =
-      `<section class="panel"><div class="panel-head"><h2>Registered repositories</h2><span class="subtle">${data.repositories.length} repositories</span></div>${data.repositories.map((r) => `<div class="inset"><strong>${esc(r.full_name)}</strong><small>ID: ${r.id}</small></div>`).join('') || '<div class="empty">No repositories registered yet.</div>'}</section>`;
+      `<section class="panel"><div class="panel-head"><h2>Registered repositories</h2><span class="subtle">${data.repositories.length} repositories</span></div>${
+        data.repositories
+          .map((r) => {
+            const configured = r.judgingConfigured ?? Boolean(r.document);
+            return `<div class="inset"><strong>${esc(r.full_name)}</strong><small>ID: ${esc(r.id)}</small><p><span class="badge">${r.connected ? 'Connected to GitHub' : 'Registered'}</span> <span class="badge">${configured ? 'Judging configured' : 'Judging setup required'}</span></p>${configured ? '' : '<p class="subtle">Set up judging criteria and PR assignments in GitHub organization to start evaluation.</p>'}</div>`;
+          })
+          .join('') ||
+        '<div class="empty">No repositories connected yet. Connect a GitHub organization to add repositories.</div>'
+      }</section>`;
   } catch (e) {
     message(e.message);
   }
