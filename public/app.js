@@ -25,7 +25,11 @@ async function get(path) {
     throw new Error('Enter an organizer credential to continue.');
   }
   if (!r.ok) throw new Error('The workspace is unavailable. Refresh to retry.');
-  return r.json();
+  const data = await r.json();
+  $('#login').hidden = true;
+  $('#content').hidden = false;
+  if (credential) $('#signout').hidden = false;
+  return data;
 }
 function message(text) {
   $('#message').className = text ? 'error' : '';
@@ -1032,6 +1036,12 @@ document.addEventListener('DOMContentLoaded', () => {
       .forEach((b) => b.classList.remove('active'));
     $('#nav-organization').classList.add('active');
     history.replaceState(null, '', '?organization=1');
+    load();
+  });
+  $('#login-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    credential = $('#token').value.trim();
+    $('#token').value = '';
     load();
   });
   $('#signout').addEventListener('click', () => {
