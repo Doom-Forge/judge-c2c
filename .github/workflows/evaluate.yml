@@ -41,7 +41,7 @@ jobs:
         env:
           JUDGE_ORIGIN: ${{ inputs.judge_origin }}
           JUDGE_JOB_ID: ${{ inputs.job_id }}
-          ALLOWED_JUDGE_ORIGIN: ${{ vars.RUNNER_JUDGE_ORIGIN }}
+          ALLOWED_JUDGE_ORIGIN: https://judge-c2c-doomforge.dakshx.workers.dev
           VM_DISK: vm-runner/images/root.raw
           VM_KERNEL: vm-runner/images/kernel
           VM_INITRD: vm-runner/images/initrd
