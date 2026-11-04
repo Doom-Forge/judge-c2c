@@ -1,0 +1,28 @@
+name: Validate Cloudflare container matrix
+on:
+  pull_request:
+    paths:
+      - 'matrix-runner/**'
+      - 'src/matrix*.ts'
+      - 'tests/matrix*.test.ts'
+      - '.github/workflows/matrix.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: matrix-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  synthetic-container-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build trusted image without participant code or deployment secrets
+        run: docker build --tag doomforge-matrix:test matrix-runner
+      - name: Verify synthetic matrix outcomes and isolation on AMD64
+        env:
+          MATRIX_IMAGE: doomforge-matrix:test
+        run: python3 -m unittest discover -s matrix-runner/tests -v
