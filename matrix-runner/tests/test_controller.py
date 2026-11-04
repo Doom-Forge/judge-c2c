@@ -23,6 +23,18 @@ class ControllerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 c.validate_snapshot({'repository':'noyyal-treasury','files':files})
 
+    def test_forecast_abuse_has_valid_weekly_positive_control(self):
+        import datetime
+        c = self.controller()
+        for kind in ('nan','duplicate-weeks'):
+            request, expected, _ = c.fixture('noyyal.security.forecast-'+kind)
+            self.assertIn('control', request)
+            dates = [datetime.date.fromisoformat(row['week_start']) for row in request['control']]
+            self.assertTrue(all(d.weekday()==0 for d in dates))
+            self.assertTrue(all((b-a).days==7 for a,b in zip(dates,dates[1:])))
+            self.assertEqual(sum(a[k]!=b[k] for a,b in zip(request['rows'],request['control']) for k in a),1)
+            self.assertEqual(expected, {'validAccepted':True,'invalidRejected':True})
+
     def test_empty_repository_returns_six_unverified_without_importing(self):
         c = self.controller()
         for repo in c.MATRICES:

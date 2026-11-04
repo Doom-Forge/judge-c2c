@@ -16,11 +16,16 @@ if op == 'dedupe':
     result = drop_statement_duplicates(pd.DataFrame(request['rows']))['txn_id'].tolist()
 elif op == 'forecast-reject':
     from noyyal.submission import validate_forecast, SubmissionError
+    result = {'validAccepted':False,'invalidRejected':False}
+    try:
+        validate_forecast(pd.DataFrame(request['control']))
+        result['validAccepted'] = True
+    except SubmissionError:
+        pass
     try:
         validate_forecast(pd.DataFrame(request['rows']))
-        result = False
     except SubmissionError:
-        result = True
+        result['invalidRejected'] = True
 elif op == 'fx':
     from noyyal.io.fx import to_inr
     result = [float(to_inr(row['amount'],row['currency'],request['fx'])) for row in request['values']]

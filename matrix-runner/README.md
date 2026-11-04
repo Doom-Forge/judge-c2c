@@ -16,7 +16,8 @@ The private pilot suites were inspected to establish existing public interfaces;
 the published probes use independently authored, synthetic inputs.
 
 This is a deliberately limited acceptance subset: Noyyal content deduplication,
-spot conversion and malformed forecast rejection; Rasoi first-order incremental
+spot conversion and malformed forecast rejection with a valid 13-week Monday
+forecast positive control; Rasoi first-order incremental
 profit, expected discount cost, opt-out and zero-budget boundaries. It does not
 score full forecast quality, model uplift, treasury solvency, API authentication,
 all budget combinations, or event-scale throughput. The two scalability sizes

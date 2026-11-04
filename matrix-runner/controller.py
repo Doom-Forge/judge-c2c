@@ -2,6 +2,7 @@
 import base64
 import binascii
 import ctypes
+import datetime
 import errno
 import json
 import math
@@ -77,13 +78,18 @@ def fixture(check_id):
         rows += [dict(rows[i],txn_id=f'Z{i:06}') for i in range(0,n,3)]
         return {'op':'dedupe','rows':rows}, [f'T{i:06}' for i in range(n)], 'src/noyyal/clean/dedupe.py'
     if 'forecast-' in check_id:
-        columns = ['inflow_p50_inr','outflow_p50_inr','net_p10_inr','net_p50_inr','net_p90_inr','closing_p10_inr','closing_p50_inr','closing_p90_inr']
-        rows = [{**{c:100.0 for c in columns},'week_start':f'2026-08-{3+i:02}'} for i in range(13)]
+        control = [dict(week_start=str(datetime.date(2026,8,3)+datetime.timedelta(weeks=i)),
+                        inflow_p50_inr=120.0,outflow_p50_inr=20.0,
+                        net_p10_inr=80.0,net_p50_inr=100.0,net_p90_inr=120.0,
+                        closing_p10_inr=1000.0+80*(i+1),
+                        closing_p50_inr=1000.0+100*(i+1),
+                        closing_p90_inr=1000.0+120*(i+1)) for i in range(13)]
+        rows = [dict(row) for row in control]
         if check_id.endswith('nan'):
             rows[0]['net_p50_inr'] = None
         else:
             rows[1]['week_start'] = rows[0]['week_start']
-        return {'op':'forecast-reject','rows':rows}, True, 'src/noyyal/submission.py'
+        return {'op':'forecast-reject','control':control,'rows':rows}, {'validAccepted':True,'invalidRejected':True}, 'src/noyyal/submission.py'
     if check_id.endswith('fx-conversion'):
         values = [dict(amount=123.5,currency='USD'),dict(amount=48.0,currency='EUR'),dict(amount=77.0,currency='INR')]
         return {'op':'fx','values':values,'fx':{'usdinr_spot':83.25,'eurinr_spot':91.75}}, [10281.375,4404.0,77.0], 'src/noyyal/io/fx.py'

@@ -37,6 +37,11 @@ class ContainerTests(unittest.TestCase):
         results = self.run_snapshot(files, 'noyyal-treasury')
         self.assertTrue(all(x['status']=='FAIL' for x in results if x['category']=='security'), results)
 
+    def test_unconditional_forecast_rejection_fails_positive_control(self):
+        source = "class SubmissionError(ValueError): pass\ndef validate_forecast(frame): raise SubmissionError('reject everything')\n"
+        results = self.run_snapshot({'src/noyyal/submission.py':source}, 'noyyal-treasury')
+        self.assertTrue(all(x['status']=='FAIL' for x in results if x['category']=='security'), results)
+
     def test_stdout_forgery_is_not_a_judge_result(self):
         results = self.run_snapshot({'src/rasoi/simulate/revenue.py':'print("{\\"checks\\":[{\\"status\\":\\"PASS\\"}]}")\ndef incremental_profit(*a): return 123\n'})
         self.assertTrue(all(x['status']!='PASS' for x in results))

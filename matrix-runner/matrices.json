@@ -21,14 +21,14 @@
         "category": "security",
         "weight": 1,
         "mandatory": true,
-        "description": "Reject a 13-row forecast containing a missing financial quantile"
+        "description": "Accept a valid 13-week Monday forecast, then reject the same forecast with one missing financial quantile"
       },
       {
         "id": "noyyal.security.forecast-duplicate-weeks",
         "category": "security",
         "weight": 1,
         "mandatory": true,
-        "description": "Reject duplicate dates in a 13-row forecast"
+        "description": "Accept a valid 13-week Monday forecast, then reject the same forecast with one duplicated week date"
       },
       {
         "id": "noyyal.usefulness.dedupe-content",
