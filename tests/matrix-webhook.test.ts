@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './miniflare';
 import { readFileSync } from 'node:fs';
 import { organization, seal } from '../src/organization';
 import { migrate } from './database';

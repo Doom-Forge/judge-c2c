@@ -7,7 +7,7 @@ import {
   it,
   vi,
 } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './miniflare';
 import { readFileSync } from 'node:fs';
 import {
   preparePublicSnapshot,

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './miniflare';
 import { api } from '../src/api';
 import type { Env } from '../src/env';
 import { migrate } from './database';

@@ -66,7 +66,7 @@ describe('Actions execution trust identity', () => {
 });
 
 it('durably polls a queued Actions attempt without redispatch, then accepts a late claim with a separate execution deadline', async () => {
-  const { Miniflare } = await import('miniflare');
+  const { Miniflare } = await import('./miniflare');
   const { migrate } = await import('./database');
   const { actionsBroker } = await import('../src/actions-runner');
   const { GitHub } = await import('../src/github');
@@ -171,7 +171,7 @@ it('durably polls a queued Actions attempt without redispatch, then accepts a la
 });
 
 it('fences claims, completed replay, expiration and immutable inputs in real D1', async () => {
-  const { Miniflare } = await import('miniflare');
+  const { Miniflare } = await import('./miniflare');
   const { migrate } = await import('./database');
   const { actionsBroker } = await import('../src/actions-runner');
   const { canonical, digest } = await import('../src/domain');
