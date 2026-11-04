@@ -1,72 +1,63 @@
-# Doomforge — 180DC VIT Chennai judge
+# Doomforge — 180DC Cloudflare container judge
 
-This workspace contains the complete Judge-C2C application from
-<https://github.com/daksh1403/judge-c2c>, including the Cloudflare Worker,
-organization dashboard, GitHub App onboarding and webhooks, issue and PR review,
-AI evidence review, migrations, tests, and isolated GitHub Actions/QEMU runner.
+Dashboard: <https://doomforge-matrix.technical-vitc.workers.dev/>.
+Organization: <https://github.com/180DC-VIT-CHENNAI/>.
+Cloudflare account: `Technical.vitc@180dc.org's Account`.
 
-Target organization: <https://github.com/180DC-VIT-CHENNAI/>.
+The current pilot replaces AI judging with deterministic tests in two Cloudflare
+Container applications, one for `noyyal-treasury` and one for
+`rasoi-offer-roulette`. PR webhooks freeze the exact head, baseline, matrix digest
+and image identity. The dashboard displays scalability, security and usefulness
+statuses, 0–100 category scores, an equal-weight overall score, individual checks
+and baseline comparisons. Incomplete evidence remains UNVERIFIED with no final
+overall score. Historical and superseded attempts are retained.
 
-Deployment origin: <https://judge-c2c-doomforge.dakshx.workers.dev>.
+Actual judging runs exclusively on Cloudflare Containers. There are no AI
+bindings or external runner credentials in this deployment. GitHub Actions
+workflows were disabled and removed at the owner's request on 2026-11-04; do not
+re-enable them. Local Docker is authorized only for image builds and validation.
 
-## Operate this workspace
-
-Use Node 24.14 or a compatible Node 24 release. Install the pinned dependencies
-with `npm ci`. Node 26 caused local Wrangler commands to take too long to exit
-and prevented the browser test server from starting within its deadline.
-
-The deployment has its own evaluation database, organization database, artifact
-KV namespace, two durable Workflows, and fresh console credentials. Its private
-Wrangler configuration and provisioning journal are in
-`.wrangler/workspaces/doomforge/`. The organizer access code is saved separately
-in `.wrangler/organization-access.txt` after deployment. These files are ignored
-by Git and must stay private.
-
-The existing Actions runner App dispatches work only to the public
-`daksh1403/judge-c2c` runner repository. This workspace pins the workflow ref and
-exact commit on `feat/180dc-doomforge-runner`. That branch permits callbacks only
-to this deployment's exact origin; the original main workflow's origin remains
-unchanged. Runner credentials stay on the Cloudflare backend. Participant code
-executes in the digest-pinned guest image, without backend or GitHub credentials.
-Changing the runner branch requires updating the pinned workflow SHA in the
-private deployment configuration before using it again.
-
-Workers AI supplies the reviewer using
-`@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Availability and grounded output must be
-verified through the authenticated reviewer diagnostic; a successful liveness
-request alone does not establish judging readiness.
-
-Validate source and the browser flow:
+## Operate
 
 ```sh
+npm ci
 npm run check
-npm audit --audit-level=high
 npm run test:browser
+npx wrangler deploy --config wrangler.matrix.jsonc
 ```
 
-Deploy the explicitly selected workspace configuration:
+The committed configuration pins the trusted image in Cloudflare's registry.
+Read [the container runbook](docs/container-matrix.md) before changing an image,
+matrix or baseline. Always validate a new image with the synthetic passing,
+failing and isolation canaries on Cloudflare before enabling real submissions.
+These narrow pilot checks do not establish full challenge scoring or event-scale
+capacity. Their exact scope is documented in `matrix-runner/README.md`.
 
-```sh
-npx wrangler deploy --config .wrangler/workspaces/doomforge/config.json
-```
+The main organizer credential is kept privately in
+`.wrangler/workspaces/technical-matrix/secrets.json` as `ADMIN_TOKEN`. Credentials,
+SQL backups, deployment receipts, canary results and screenshots are ignored by
+Git and must remain private. The existing organization-owned GitHub App connection
+and selected repositories were migrated with the organization database.
 
-Register and install the organization-owned evaluation GitHub App from the
-authenticated organization console. It requires Contents and Pull requests read
-access, and Issues and Checks write access. Register actual teams, immutable
-baselines, criteria and assignments before evaluating participant work. Do not
-invent criteria or award scores to unassigned repositories.
+An isolated synthetic review is available at
+<https://doomforge-matrix-review.technical-vitc.workers.dev/> with public demo
+credential `preview`. It has no live databases, secrets or execution bindings.
+Its generated results are not participant evaluations.
 
-## Preserved old databases
+## Retained historical deployment
 
-With explicit owner approval on 2026-11-02, the detached old
-`judge-c2c-production` and retired `judge-c2c-organization-production` databases
-were backed up and deleted to free the two D1 slots required by this workspace.
-Their SQL backups and SHA-256/integrity verification records are retained
-privately in `.wrangler/backups/2026-11-02/`. Both exports were restored into local
-SQLite and passed `PRAGMA integrity_check` before deletion. The retired
-organization export retains its five historical evaluations, team and connection.
-These historical records are not part of this organization's new databases.
+The previous Worker at <https://judge-c2c-doomforge.dakshx.workers.dev/> and its
+personal-account databases are retained for history. Verified SQL backups and
+SHA-256 receipts are stored privately under
+`.wrangler/workspaces/technical-matrix/`. They were restored into local SQLite and
+passed integrity checks before import into the technical account. No old database
+was deleted during this migration.
 
-Live deployment, connection and diagnostic receipts are recorded privately in
-`.wrangler/operator/`; source tests and synthetic diagnostics do not establish
-event capacity or the correctness of real participant submissions.
+The private pilot factory remains in `.private/doomforge-factory`, a separate
+ignored private repository. Its reference solutions and hidden datasets are not
+part of the public matrix container. Older Actions/QEMU and AI evidence remains
+historical; it does not describe the new pilot execution path.
+
+Earlier retired database backups from 2026-11-02 remain in
+`.wrangler/backups/2026-11-02/`. The current change review is
+<https://github.com/daksh1403/judge-c2c/pull/15>; it remains unmerged.

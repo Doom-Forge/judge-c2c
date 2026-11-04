@@ -6,7 +6,7 @@ import {
 } from '../src/actions-runner';
 import type { Env } from '../src/env';
 import type { GitHub as GitHubClient } from '../src/github';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 const env = {
   RUNNER_ACTIONS_REPOSITORY: 'owner/public-runner',
   RUNNER_ACTIONS_REPOSITORY_ID: '123',
@@ -16,10 +16,13 @@ const env = {
   RUNNER_IMAGE_URI: 'qemu-vm@sha256:' + 'b'.repeat(64),
 } as Env;
 
-it('leaves time for trusted setup as well as a maximum-duration participant VM', () => {
-  const workflow = readFileSync('.github/workflows/evaluate.yml', 'utf8');
-  const timeout = Number(workflow.match(/timeout-minutes: (\d+)/)?.[1]);
-  expect(timeout).toBeGreaterThanOrEqual(15);
+it('does not ship executable GitHub Actions workflows', () => {
+  const directory = '.github/workflows';
+  expect(
+    existsSync(directory)
+      ? readdirSync(directory).filter((name) => /\.ya?ml$/.test(name))
+      : [],
+  ).toEqual([]);
 });
 const claims = {
   repository: 'owner/public-runner',

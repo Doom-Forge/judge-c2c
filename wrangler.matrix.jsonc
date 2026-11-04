@@ -25,6 +25,7 @@
     "PUBLIC_ORIGIN": "https://doomforge-matrix.technical-vitc.workers.dev",
     "ORG_PUBLIC_ORIGIN": "https://doomforge-matrix.technical-vitc.workers.dev",
     "RUNNER_ENABLED": "false",
+    "MATRIX_IMAGE_URI": "registry.cloudflare.com/2d8e86c5870a28947cb3eea1e20a8d86/doomforge-matrix@sha256:1b4bf5c07118c1f435c28dcf6aa4a6a23bc251b5523faca42b3903e019b94e16",
   },
   "d1_databases": [
     {
@@ -65,7 +66,7 @@
       "scheduling_policy": "durable_object",
       "images": {
         "base": {
-          "dockerfile": "./matrix-runner/Dockerfile",
+          "image": "registry.cloudflare.com/2d8e86c5870a28947cb3eea1e20a8d86/doomforge-matrix@sha256:1b4bf5c07118c1f435c28dcf6aa4a6a23bc251b5523faca42b3903e019b94e16",
         },
       },
     },
@@ -74,7 +75,7 @@
       "scheduling_policy": "durable_object",
       "images": {
         "base": {
-          "dockerfile": "./matrix-runner/Dockerfile",
+          "image": "registry.cloudflare.com/2d8e86c5870a28947cb3eea1e20a8d86/doomforge-matrix@sha256:1b4bf5c07118c1f435c28dcf6aa4a6a23bc251b5523faca42b3903e019b94e16",
         },
       },
     },

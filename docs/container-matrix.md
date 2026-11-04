@@ -10,6 +10,9 @@ Both use a trusted Python image, with repository-specific checks from
 `matrix-runner/matrices.json`. Instances start for execution and are destroyed
 when it finishes. There are no AI bindings, provider calls, Actions dispatches,
 tunnel runners or participant package installs in this pilot path.
+GitHub Actions workflows are removed and disabled at the owner's request. Do not
+add an Actions pipeline for validation or deployment. Use the local commands and
+Cloudflare diagnostics below.
 
 ## Scoring
 
@@ -49,6 +52,8 @@ URI together with matrix digest/version and baseline SHA. A rollout that cannot
 execute the frozen image produces an execution error, never a score from a
 substitute image. Run the current matrix version to completion before rolling
 out a changed image/matrix; retain previous run reports.
+The `durable_object` scheduling policy selects that exact image on startup;
+database leases bound each repository to two simultaneous container executions.
 
 The authenticated `POST /api/matrix/diagnostic` endpoint accepts an organizer
 snapshot for testing the same Cloudflare execution path. Diagnostics return
