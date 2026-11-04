@@ -1,0 +1,91 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "doomforge-matrix",
+  "account_id": "2d8e86c5870a28947cb3eea1e20a8d86",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-04",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "html_handling": "none",
+    "directory": "public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "vars": {
+    "ENVIRONMENT": "production",
+    "MATRIX_MODE": "true",
+    "DEMO_MODE": "false",
+    "PREVIEW_TESTING": "false",
+    "ORG_NAME": "180DC-VIT-CHENNAI",
+    "PUBLIC_ORIGIN": "https://doomforge-matrix.technical-vitc.workers.dev",
+    "ORG_PUBLIC_ORIGIN": "https://doomforge-matrix.technical-vitc.workers.dev",
+    "RUNNER_ENABLED": "false",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "doomforge-matrix-evaluations",
+      "database_id": "5f4eddca-7b35-4be5-970d-fd6662dec551",
+      "migrations_dir": "migrations",
+    },
+    {
+      "binding": "ORG_DB",
+      "database_name": "doomforge-matrix-organization",
+      "database_id": "ef2b57b3-edf2-452b-a635-1d8b558b1385",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "workflows": [
+    {
+      "binding": "MATRIX_EVALUATOR",
+      "name": "doomforge-matrix-evaluator",
+      "class_name": "MatrixEvaluationWorkflow",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NOYYAL_MATRIX",
+        "class_name": "NoyyalMatrixRunner",
+      },
+      {
+        "name": "RASOI_MATRIX",
+        "class_name": "RasoiMatrixRunner",
+      },
+    ],
+  },
+  "containers": [
+    {
+      "class_name": "NoyyalMatrixRunner",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "dockerfile": "./matrix-runner/Dockerfile",
+        },
+      },
+    },
+    {
+      "class_name": "RasoiMatrixRunner",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "dockerfile": "./matrix-runner/Dockerfile",
+        },
+      },
+    },
+  ],
+  "migrations": [
+    {
+      "tag": "matrix-v1",
+      "new_sqlite_classes": ["NoyyalMatrixRunner", "RasoiMatrixRunner"],
+    },
+  ],
+  "triggers": {
+    "crons": ["*/2 * * * *"],
+  },
+}

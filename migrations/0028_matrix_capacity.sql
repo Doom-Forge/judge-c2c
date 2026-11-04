@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS matrix_capacity(slot TEXT PRIMARY KEY,owner TEXT NOT NULL,expires_ms INTEGER NOT NULL);

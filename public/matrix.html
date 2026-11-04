@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Doomforge · Container matrix</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/matrix.css" />
+    <script src="/matrix.js" defer></script>
+  </head>
+  <body>
+    <header class="matrix-topbar">
+      <a class="brand" href="/matrix.html"
+        ><span class="mark">d<span>◆</span></span
+        ><span
+          >Doomforge<small class="brand-sub">DETERMINISTIC JUDGING</small></span
+        ></a
+      >
+      <span class="environment">CLOUDFLARE CONTAINERS</span>
+      <button id="lock" class="button" hidden>Lock workspace</button>
+    </header>
+    <main class="matrix-main">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">REPOSITORY MATRIX / PILOT</div>
+          <h1>Evidence, then a score.</h1>
+          <p>Trusted checks. Frozen baselines. Every attempt accounted for.</p>
+        </div>
+      </div>
+      <div id="notice" role="status" aria-live="polite"></div>
+      <form id="login" class="login">
+        <h2>Organizer workspace</h2>
+        <p>
+          Enter your organizer credential to inspect container runs. It stays in
+          memory until you lock or reload this page.
+        </p>
+        <label for="credential">Organizer credential</label
+        ><input id="credential" type="password" autocomplete="off" required />
+        <button class="button primary" type="submit">Unlock workspace</button>
+      </form>
+      <section id="workspace" hidden>
+        <div class="section-heading">
+          <h2>Connected repositories</h2>
+          <button id="refresh" class="button">Refresh results</button>
+        </div>
+        <div id="repositories" class="matrix-repositories"></div>
+        <div class="matrix-layout">
+          <section class="panel run-list">
+            <div class="panel-head">
+              <h2>Run history</h2>
+              <span class="subtle">Updates every 10 seconds</span>
+            </div>
+            <div id="runs"></div>
+          </section>
+          <section id="detail" aria-label="Run details" class="matrix-detail">
+            <p class="empty">Select a run to inspect its evidence.</p>
+          </section>
+        </div>
+      </section>
+      <aside class="principle">
+        <h3>Measured scope.</h3>
+        <p>
+          Scores describe only the versioned checks executed for this
+          repository. They are not a general quality or security guarantee.
+          Missing or incomplete evidence is UNVERIFIED and has no final score.
+          Baseline failures do not change the absolute PR score.
+        </p>
+      </aside>
+    </main>
+  </body>
+</html>

@@ -1,4 +1,5 @@
 import { providerConfigured, providerHasKey } from './external-review';
+import { acceptMatrixPR } from './matrix-service';
 import { selectReviewModel } from './review-routing';
 import {
   retirementStatus,
@@ -581,6 +582,13 @@ export async function organization(
     const delivery = request.headers.get('x-github-delivery');
     if (!delivery || !/^[a-zA-Z0-9-]{1,100}$/.test(delivery))
       return json({ error: 'INVALID_DELIVERY' }, 400);
+    if (env.MATRIX_MODE === 'true' && event === 'pull_request')
+      return acceptMatrixPR(
+        JSON.parse(new TextDecoder().decode(body)),
+        env,
+        delivery,
+        await digest(new TextDecoder().decode(body)),
+      );
     if (event === 'installation' || event === 'installation_repositories') {
       const payloadHash = await digest(new TextDecoder().decode(body));
       const previous = await env.ORG_DB.prepare(
@@ -641,6 +649,7 @@ export async function organization(
         .run();
       return json({ status: 'synchronized' });
     }
+    if (env.MATRIX_MODE === 'true') return json({ status: 'ignored' }, 202);
     if (
       event === 'issues' ||
       event === 'issue_comment' ||

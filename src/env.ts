@@ -1,4 +1,9 @@
 export interface Env {
+  MATRIX_MODE?: string;
+  MATRIX_IMAGE_URI?: string;
+  MATRIX_EVALUATOR?: Workflow<{ runId: string }>;
+  NOYYAL_MATRIX?: DurableObjectNamespace;
+  RASOI_MATRIX?: DurableObjectNamespace;
   // Internal shared coordination database; not a participant-accessible binding.
   CAPACITY_DB?: D1Database;
   RUNNER_BACKEND?: 'actions-vm';

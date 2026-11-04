@@ -1,4 +1,11 @@
 import { actionsBroker } from './actions-runner';
+import { matrixApi } from './matrix-service';
+import { reconcileMatrix } from './matrix-workflow';
+export {
+  MatrixEvaluationWorkflow,
+  NoyyalMatrixRunner,
+  RasoiMatrixRunner,
+} from './matrix-workflow';
 import { z } from 'zod';
 import type { Env } from './env';
 import { organization, maintainOrganization } from './organization';
@@ -22,7 +29,18 @@ export default {
     const url = new URL(request.url);
     let response: Response;
     try {
-      if (
+      if (env.MATRIX_MODE === 'true' && url.pathname.startsWith('/api/matrix/'))
+        response = await matrixApi(request, env);
+      else if (env.MATRIX_MODE === 'true' && url.pathname.startsWith('/api/'))
+        response = Response.json({ error: 'NOT_FOUND' }, { status: 404 });
+      else if (
+        env.MATRIX_MODE === 'true' &&
+        (url.pathname === '/' || url.pathname === '/index.html')
+      ) {
+        const asset = new URL(request.url);
+        asset.pathname = '/matrix.html';
+        response = await env.ASSETS.fetch(new Request(asset, request));
+      } else if (
         url.pathname.startsWith('/api/organization/') ||
         url.pathname.startsWith('/auth/github/') ||
         url.pathname === '/webhooks/organization'
@@ -127,6 +145,10 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ) {
+    if (env.MATRIX_MODE === 'true') {
+      ctx.waitUntil(reconcileMatrix(env));
+      return;
+    }
     if (env.ORG_DB) ctx.waitUntil(maintainOrganization(env, ctx));
     if (previewEnabled(env)) ctx.waitUntil(reconcilePreview(env));
     else if (env.DEMO_MODE !== 'true') ctx.waitUntil(reconcile(env));

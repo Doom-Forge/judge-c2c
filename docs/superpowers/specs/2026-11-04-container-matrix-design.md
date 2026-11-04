@@ -9,6 +9,9 @@ container checks. The dashboard currently connects the organization repositories
 with both status and numerical scores. This document defines the proposed scoring
 defaults for owner review.
 
+Owner clarification: use Cloudflare Containers only for judging execution. Do not
+dispatch pilot runs to GitHub Actions, QEMU hosts, tunnels, or local runners.
+
 ## Architecture and alternatives
 
 Deploy the dashboard Worker and two repository-specific container configurations
