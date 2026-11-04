@@ -12,6 +12,11 @@ statuses, 0–100 category scores, an equal-weight overall score, individual che
 and baseline comparisons. Incomplete evidence remains UNVERIFIED with no final
 overall score. Historical and superseded attempts are retained.
 
+Scores are shown only on the authenticated dashboard. The GitHub App, **DoomBot
+180DC**, posts a single avatar-backed “DoomBot is evaluating your PR.” notice per
+PR. It does not publish numeric marks or category results to GitHub. New heads and
+retries reuse that notice instead of adding duplicate comments.
+
 Actual judging runs exclusively on Cloudflare Containers. There are no AI
 bindings or external runner credentials in this deployment. GitHub Actions
 workflows were disabled and removed at the owner's request on 2026-11-04; do not

@@ -231,3 +231,55 @@ it('recovers a persisted queued dispatch after workflow creation fails', async (
   ).first<string>('latest_run_id');
   expect(jobs).toContain(id);
 });
+it('keeps fresh and retried runs unavailable to legacy score publication', async () => {
+  const p = payload('4'.repeat(40), '2026-11-04T18:00:00Z');
+  p.pull_request.number = 11;
+  const response = await acceptMatrixPR(p, env, 'notice-only', 'notice');
+  const { id } = (await response.json()) as { id: string };
+  expect(
+    await env.DB.prepare(
+      'SELECT publication_status FROM matrix_runs WHERE id=?',
+    )
+      .bind(id)
+      .first('publication_status'),
+  ).toBe('NOTICE_ONLY');
+  await env.DB.prepare("UPDATE matrix_runs SET state='COMPLETED' WHERE id=?")
+    .bind(id)
+    .run();
+  const retry = await matrixApi(
+    new Request(`https://test/api/matrix/runs/${id}/retry`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + env.ADMIN_TOKEN },
+    }),
+    env,
+  );
+  expect(retry.status).toBe(202);
+  const next = (await retry.json()) as { id: string };
+  expect(
+    await env.DB.prepare(
+      'SELECT publication_status FROM matrix_runs WHERE id=?',
+    )
+      .bind(next.id)
+      .first('publication_status'),
+  ).toBe('NOTICE_ONLY');
+});
+it('accepts ready_for_review without regrading an unchanged head', async () => {
+  const p = payload('5'.repeat(40), '2026-11-04T19:00:00Z');
+  p.pull_request.number = 12;
+  const first = await acceptMatrixPR(p, env, 'draft-created', 'draft-created');
+  const { id } = (await first.json()) as { id: string };
+  await env.DB.prepare("UPDATE matrix_runs SET state='COMPLETED' WHERE id=?")
+    .bind(id)
+    .run();
+  const count = jobs.length;
+  p.action = 'ready_for_review';
+  p.pull_request.updated_at = '2026-11-04T20:00:00Z';
+  const ready = await acceptMatrixPR(p, env, 'draft-ready', 'draft-ready');
+  expect(ready.status).toBe(200);
+  expect(jobs.length).toBe(count);
+  expect(
+    await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM matrix_runs WHERE pr_number=12',
+    ).first('n'),
+  ).toBe(1);
+});

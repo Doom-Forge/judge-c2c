@@ -39,8 +39,10 @@ equal category weights; UNVERIFIED category means null overall score; no main me
       sending GitHub credentials into the container, and save baseline/head evidence.
 - [ ] Export distinct NoyyalMatrixRunner and RasoiMatrixRunner Durable Objects.
       Start with `enableInternet:false`, enforce timeout, destroy after each run.
-- [ ] Implement authenticated overview, details and retry APIs; publish a GitHub
-      check with exact commit, category outcomes, and dashboard detail link.
+- [ ] Implement authenticated overview, details and retry APIs. Keep all marks on
+      the dashboard; GitHub receives only the DoomBot evaluating notice and avatar.
+- [ ] Request Kevin272-dot for ready-for-review PRs in both synced repos, remove
+      pending Copilot requests, and disable automatic Copilot reviews in GitHub.
 
 ## Task 3 — Matrix dashboard
 

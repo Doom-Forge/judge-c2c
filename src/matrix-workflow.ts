@@ -9,6 +9,8 @@ import matrices from '../matrix-runner/matrices.json';
 import { canonical, digest, type Contract } from './domain';
 import type { Env } from './env';
 import { GitHub } from './github';
+import { ensureDefaultReviewer } from './default-reviewer';
+import { doombotNoticeBody, ensureDoomBotNotice } from './doombot-notice';
 import { organizationEnv } from './organization';
 import { scoreMatrix, validateSnapshot } from './matrix';
 import { acquireMatrixSlot, releaseMatrixSlot } from './matrix-capacity';
@@ -37,19 +39,23 @@ async function current(env: Env, id: string) {
   if (!run) throw new Error('MATRIX_SUPERSEDED');
   return run;
 }
-async function clientFor(env: Env, run: MatrixRun) {
+async function clientFor(env: Env, run: MatrixRun, pullRequestsWrite = false) {
   const scoped = await organizationEnv(env);
   const installation = await dbFor(env)
     .prepare('SELECT installation_id FROM github_connection WHERE id=1')
     .first<number>('installation_id');
   if (!installation) throw new Error('APP_NOT_INSTALLED');
-  return GitHub.installation(scoped, {
-    repository: {
-      id: run.repository_id,
-      fullName: run.full_name,
-      installationId: installation,
-    },
-  } as Contract);
+  return GitHub.installation(
+    scoped,
+    {
+      repository: {
+        id: run.repository_id,
+        fullName: run.full_name,
+        installationId: installation,
+      },
+    } as Contract,
+    { issuesWrite: false, pullRequestsWrite, checksWrite: false },
+  );
 }
 export async function matrixSnapshot(
   github: GitHub,
@@ -236,94 +242,31 @@ type MatrixReport = ReturnType<typeof scoreMatrix> & {
   image?: string;
   finishedAt?: string;
 };
-async function publishMatrix(env: Env, run: MatrixRun) {
-  const db = dbFor(env),
-    lease = 'PUBLISHING:' + (Date.now() + 300000);
-  const claimed = await db
-    .prepare(
-      "UPDATE matrix_runs SET publication_status=? WHERE id=? AND (publication_status='PENDING' OR (publication_status LIKE 'PUBLISHING:%' AND CAST(substr(publication_status,12) AS INTEGER)<?))",
-    )
-    .bind(lease, run.id, Date.now())
-    .run();
-  if (!claimed.meta.changes) return;
+async function requestMatrixReviewer(env: Env, run: MatrixRun) {
+  if (!env.DEFAULT_PR_REVIEWER) return;
   try {
-    const github = await clientFor(env, run);
-    const pr = await github.api<{ head: { sha: string }; state: string }>(
-      `/repos/${run.full_name}/pulls/${run.pr_number}`,
+    await ensureDefaultReviewer(
+      dbFor(env),
+      await clientFor(env, run, true),
+      run,
+      env.DEFAULT_PR_REVIEWER,
     );
-    if (pr.state !== 'open' || pr.head.sha !== run.head_sha) {
-      await dbFor(env)
-        .prepare(
-          "UPDATE matrix_runs SET state='SUPERSEDED',updated_at=CURRENT_TIMESTAMP WHERE id=?",
-        )
-        .bind(run.id)
-        .run();
-      return;
-    }
-    const report = run.report ? (JSON.parse(run.report) as MatrixReport) : null;
-    const summary = report
-      ? Object.entries(report.categories)
-          .map(
-            ([category, value]) =>
-              `${category}: ${value.status}, ${value.score === null ? 'UNVERIFIED' : value.score + '/100'}`,
-          )
-          .join('\n')
-      : 'Execution failed: ' + (run.failure_code ?? 'UNAVAILABLE');
-    const conclusion =
-      run.state === 'FAILED' || !report || report.overallScore === null
-        ? 'action_required'
-        : Object.values(report.categories).some((c) => c.status === 'FAIL')
-          ? 'failure'
-          : Object.values(report.categories).every((c) => c.status === 'PASS')
-            ? 'success'
-            : 'neutral';
-    const body = {
-      name: 'Doomforge container matrix',
-      head_sha: run.head_sha,
-      external_id: run.id,
-      status: 'completed',
-      conclusion,
-      details_url: `${env.PUBLIC_ORIGIN}/#${run.id}`,
-      output: {
-        title:
-          report?.overallScore === null || !report
-            ? 'Judging needs attention'
-            : `Container matrix: ${report.overallScore}/100`,
-        summary:
-          summary +
-          '\n\nPilot scope: synthetic domain tests only. See the dashboard for baseline comparisons and individual evidence.',
-      },
-    };
-    if (!run.check_run_id) {
-      const existing = await github.api<{
-        check_runs: { id: number; external_id: string }[];
-      }>(
-        `/repos/${run.full_name}/commits/${run.head_sha}/check-runs?check_name=Doomforge%20container%20matrix&per_page=100`,
-      );
-      run.check_run_id =
-        existing.check_runs.find((c) => c.external_id === run.id)?.id ?? null;
-    }
-    const check = await github.api<{ id: number }>(
-      `/repos/${run.full_name}/check-runs${run.check_run_id ? '/' + run.check_run_id : ''}`,
-      {
-        method: run.check_run_id ? 'PATCH' : 'POST',
-        body: JSON.stringify(body),
-      },
-    );
-    await dbFor(env)
-      .prepare(
-        "UPDATE matrix_runs SET check_run_id=?,publication_status='PUBLISHED' WHERE id=?",
-      )
-      .bind(check.id, run.id)
-      .run();
-  } catch (error) {
-    await db
-      .prepare(
-        "UPDATE matrix_runs SET publication_status='PENDING' WHERE id=? AND publication_status=?",
-      )
-      .bind(run.id, lease)
-      .run();
-    throw error;
+  } catch {
+    /* Cron retries configuration and API failures. */
+  }
+}
+async function notifyMatrix(env: Env, run: MatrixRun) {
+  try {
+    const db = dbFor(env);
+    const slug = await db
+      .prepare('SELECT slug FROM github_connection WHERE id=1')
+      .first<string>('slug');
+    const origin = env.ORG_PUBLIC_ORIGIN || env.PUBLIC_ORIGIN;
+    if (!slug || !origin) return;
+    const github = await clientFor(env, run, true);
+    await ensureDoomBotNotice(db, github, run, origin, slug + '[bot]');
+  } catch {
+    /* Notification must never block evaluation. Cron retries it. */
   }
 }
 export class MatrixEvaluationWorkflow extends WorkflowEntrypoint<
@@ -373,6 +316,8 @@ export class MatrixEvaluationWorkflow extends WorkflowEntrypoint<
             );
           throw new Error('MATRIX_SUPERSEDED');
         }
+        await notifyMatrix(this.env, run);
+        await requestMatrixReviewer(this.env, run);
         await db
           .prepare(
             "UPDATE matrix_runs SET state='RUNNING',updated_at=CURRENT_TIMESTAMP WHERE id=? AND state='QUEUED'",
@@ -455,18 +400,6 @@ export class MatrixEvaluationWorkflow extends WorkflowEntrypoint<
           .run();
       });
     }
-    await step.do(
-      'publish-result',
-      { retries: { limit: 3, delay: '15 seconds', backoff: 'exponential' } },
-      async () => {
-        const run = await db
-          .prepare('SELECT * FROM matrix_runs WHERE id=?')
-          .bind(id)
-          .first<MatrixRun>();
-        if (run && ['COMPLETED', 'FAILED'].includes(run.state))
-          await publishMatrix(this.env, run);
-      },
-    );
   }
 }
 export async function reconcileMatrix(env: Env) {
@@ -478,12 +411,34 @@ export async function reconcileMatrix(env: Env) {
     .all<{ id: string }>();
   for (const row of queued.results)
     await dispatchMatrix(env, row.id).catch(() => undefined);
+  if (env.DEFAULT_PR_REVIEWER) {
+    const reviews = await db
+      .prepare(
+        "SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id LEFT JOIN matrix_default_reviewers d ON d.repository_id=r.repository_id AND d.pr_number=r.pr_number AND d.reviewer=? WHERE s.closed=0 AND g.accessible=1 AND (d.status IS NULL OR d.status='PENDING') ORDER BY COALESCE(d.updated_at,'1970-01-01') ASC,r.created_at ASC LIMIT 100",
+      )
+      .bind(env.DEFAULT_PR_REVIEWER)
+      .all<MatrixRun>();
+    for (const run of reviews.results) await requestMatrixReviewer(env, run);
+  }
+  const origin = env.ORG_PUBLIC_ORIGIN || env.PUBLIC_ORIGIN;
+  if (!origin) return;
+  const noticeHash = await digest(doombotNoticeBody(origin));
   const pending = await db
     .prepare(
-      "SELECT * FROM matrix_runs WHERE state IN ('COMPLETED','FAILED') AND (publication_status='PENDING' OR (publication_status LIKE 'PUBLISHING:%' AND CAST(substr(publication_status,12) AS INTEGER)<?)) ORDER BY created_at DESC LIMIT 10",
+      "SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id LEFT JOIN matrix_doombot_notices n ON n.repository_id=r.repository_id AND n.pr_number=r.pr_number WHERE s.closed=0 AND g.accessible=1 AND r.state IN ('RUNNING','COMPLETED','FAILED') AND (n.comment_id IS NULL OR n.body_hash IS NULL OR n.body_hash<>?) ORDER BY r.created_at DESC LIMIT 100",
     )
-    .bind(Date.now())
+    .bind(noticeHash)
     .all<MatrixRun>();
-  for (const run of pending.results)
-    await publishMatrix(env, run).catch(() => undefined);
+  for (const run of pending.results) {
+    try {
+      const github = await clientFor(env, run);
+      const pr = await github.api<{ state: string; head: { sha: string } }>(
+        `/repos/${run.full_name}/pulls/${run.pr_number}`,
+      );
+      if (pr.state === 'open' && pr.head.sha === run.head_sha)
+        await notifyMatrix(env, run);
+    } catch {
+      /* Retry next reconciliation. */
+    }
+  }
 }

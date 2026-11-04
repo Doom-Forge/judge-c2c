@@ -1,4 +1,5 @@
 export interface Env {
+  DEFAULT_PR_REVIEWER?: string;
   MATRIX_MODE?: string;
   MATRIX_IMAGE_URI?: string;
   MATRIX_EVALUATOR?: Workflow<{ runId: string }>;

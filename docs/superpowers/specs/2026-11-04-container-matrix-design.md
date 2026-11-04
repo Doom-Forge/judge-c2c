@@ -11,6 +11,9 @@ defaults for owner review.
 
 Owner clarification: use Cloudflare Containers only for judging execution. Do not
 dispatch pilot runs to GitHub Actions, QEMU hosts, tunnels, or local runners.
+Owner reporting update: keep numerical scores on the dashboard only. GitHub gets
+a single “DoomBot is evaluating your PR.” comment and a Doom-inspired avatar,
+without marks, category results or score check runs.
 
 ## Architecture and alternatives
 
@@ -30,8 +33,8 @@ The existing signed GitHub webhook validates the repository and PR, pins the hea
 SHA, and queues an asynchronous run. Resolve the trusted matrix by repository ID,
 not from participant files. Fetch code with installation credentials only in the
 control plane, then pass a bounded snapshot into the execution environment without
-credentials. Persist normalized results and publish them to the dashboard and the
-existing GitHub check integration. Recheck the latest PR head before publication;
+credentials. Persist normalized results and publish them to the dashboard. Post
+only the DoomBot evaluating notice to GitHub. Recheck the latest PR head;
 retain superseded attempts in history.
 
 ## Matrix and scoring

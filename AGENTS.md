@@ -8,6 +8,10 @@ only for judging, with no AI judging and no GitHub Actions. Do not add or re-ena
 GitHub Actions workflows. Use Wrangler for deployment and local checks plus
 Cloudflare diagnostics for validation. Existing Actions workflows were disabled;
 historical implementation and evaluation evidence do not authorize using them.
+Marks stay on the authenticated dashboard. GitHub receives only the DoomBot
+evaluating notice and avatar; never publish category scores or marks to GitHub.
+For the two synced solution repositories, Kevin272-dot is the default human
+reviewer. Do not enable automatic Copilot reviews or request Copilot as reviewer.
 
 - Implement on a feature branch or continue a coherent open PR. Commit, push,
   create/update a PR, inspect CI and a Cloudflare review deployment. Never merge

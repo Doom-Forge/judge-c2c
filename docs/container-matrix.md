@@ -60,6 +60,32 @@ snapshot for testing the same Cloudflare execution path. Diagnostics return
 results directly and do not create participant submission records. Save their
 receipts privately. The read-only synthetic review never implements this route.
 
+## DoomBot notices
+
+Marks remain exclusively on the authenticated dashboard. The installed GitHub App
+`doombot-180dc` posts one “DoomBot is evaluating your PR.” comment with its avatar
+when evaluation begins. A durable lease and authenticated bot marker reconcile
+retries without comment spam. Notification outages do not stop grading.
+
+Matrix execution tokens have no Checks API permission. Previous numeric check
+summaries were replaced with neutral notices; new evaluations do not create check
+runs. The avatar lives in `public/doombot-avatar.svg` and its PNG export, and is
+also configured as the GitHub App's profile image. Changing the App's slug requires
+updating both the connection row and its encrypted metadata in the organization
+database; its App ID, webhook signing secret and installation stay unchanged.
+
+`DEFAULT_PR_REVIEWER=Kevin272-dot` assigns the human reviewer once per open,
+ready-for-review PR. Drafts wait until `ready_for_review`; authors are not asked to
+review their own work. Existing requests and completed reviews are recognized.
+Pending Copilot bot review requests are removed. Disable automatic Copilot review
+in GitHub's applicable user/repository rules as well. Review assignment and its
+recovery run through Cloudflare, without GitHub Actions.
+
+DoomBot requires Pull requests read/write on the two selected repositories to
+post PR conversation notices and request reviewers. Evaluation snapshots use
+read-only tokens; write tokens remain in the control plane. Reviewer failures
+remain retryable and never turn grading evidence into a pass.
+
 After the new deployment passes Cloudflare canaries, point the organization-owned
 GitHub App webhook at `/webhooks/organization` on the new Worker origin. Opened,
 synchronize, reopened and closed PR events update immutable attempt history.

@@ -72,7 +72,15 @@ export async function acceptMatrixPR(
   const p = parsed.data,
     pr = p.pull_request,
     db = dbFor(env);
-  if (!['opened', 'synchronize', 'reopened', 'closed'].includes(p.action))
+  if (
+    ![
+      'opened',
+      'synchronize',
+      'reopened',
+      'closed',
+      'ready_for_review',
+    ].includes(p.action)
+  )
     return json({ status: 'ignored' }, 202);
   const repo = await db
     .prepare(
@@ -226,7 +234,7 @@ export async function acceptMatrixPR(
       .bind(repo.repository_id, pr.number, pr.head.sha, pr.updated_at, id),
     db
       .prepare(
-        'INSERT OR IGNORE INTO matrix_runs(id,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM matrix_submissions WHERE repository_id=? AND pr_number=? AND latest_run_id=?)',
+        "INSERT OR IGNORE INTO matrix_runs(id,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,publication_status) SELECT ?,?,?,?,?,?,?,?,?,'NOTICE_ONLY' WHERE EXISTS(SELECT 1 FROM matrix_submissions WHERE repository_id=? AND pr_number=? AND latest_run_id=?)",
       )
       .bind(
         id,
@@ -341,7 +349,7 @@ export async function matrixApi(request: Request, env: Env) {
         .bind(id, run.repository_id, run.pr_number, run.id),
       db
         .prepare(
-          'INSERT INTO matrix_runs(id,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,attempt) SELECT ?,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,attempt+1 FROM matrix_runs WHERE id=? AND EXISTS(SELECT 1 FROM matrix_submissions WHERE repository_id=? AND pr_number=? AND latest_run_id=?)',
+          "INSERT INTO matrix_runs(id,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,attempt,publication_status) SELECT ?,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,attempt+1,'NOTICE_ONLY' FROM matrix_runs WHERE id=? AND EXISTS(SELECT 1 FROM matrix_submissions WHERE repository_id=? AND pr_number=? AND latest_run_id=?)",
         )
         .bind(id, run.id, run.repository_id, run.pr_number, id),
     ]);

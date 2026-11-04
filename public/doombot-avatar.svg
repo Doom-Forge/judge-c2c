@@ -1,0 +1,169 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1024 1024"
+  role="img"
+  aria-label="DoomBot, a steel-faced robot under an emerald hood"
+>
+  <defs>
+    <radialGradient id="bg">
+      <stop stop-color="#153b2b" />
+      <stop offset="1" stop-color="#060c0b" />
+    </radialGradient>
+    <linearGradient id="hood" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#24744c" />
+      <stop offset=".45" stop-color="#124c32" />
+      <stop offset="1" stop-color="#061c17" />
+    </linearGradient>
+    <linearGradient id="steel" x1="0" x2="1" y1="0" y2=".85">
+      <stop stop-color="#eff5ef" />
+      <stop offset=".2" stop-color="#a4b7b3" />
+      <stop offset=".48" stop-color="#e6eeeb" />
+      <stop offset=".7" stop-color="#697e7b" />
+      <stop offset="1" stop-color="#acbcb8" />
+    </linearGradient>
+    <linearGradient id="brow">
+      <stop stop-color="#566c68" />
+      <stop offset=".5" stop-color="#d6e1dc" />
+      <stop offset="1" stop-color="#49615b" />
+    </linearGradient>
+    <radialGradient id="eye">
+      <stop stop-color="#d0ffa9" />
+      <stop offset=".55" stop-color="#6cff76" />
+      <stop offset="1" stop-color="#21a658" />
+    </radialGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="8" /></filter>
+  </defs>
+  <rect width="1024" height="1024" rx="220" fill="#060c0b" />
+  <circle
+    cx="512"
+    cy="512"
+    r="486"
+    fill="url(#bg)"
+    stroke="#31533d"
+    stroke-width="3"
+  />
+  <path
+    d="M90 946 154 750 228 667 223 406Q257 176 512 77 767 176 801 406L796 667 870 750 934 946Z"
+    fill="url(#hood)"
+    stroke="#376e4c"
+    stroke-width="5"
+  />
+  <path
+    d="M512 130Q319 272 299 433L325 680 512 828 699 680 725 433Q705 272 512 130Z"
+    fill="#071813"
+    stroke="#1d442f"
+    stroke-width="12"
+  />
+  <path
+    d="M229 413Q278 224 512 77L388 257 299 433 267 650 228 667Z"
+    fill="#3b8d5b"
+    opacity=".43"
+  />
+  <path
+    d="m512 77 124 180 89 176 32 217 39 17 5-261Q767 176 512 77Z"
+    fill="#061d17"
+    opacity=".8"
+  />
+  <path
+    d="M340 325 430 250 512 220 594 250 684 325 688 573 644 697 564 762H460l-80-65-44-124Z"
+    fill="url(#steel)"
+    stroke="#253f38"
+    stroke-width="8"
+  />
+  <path d="m342 326 91-75 79-31-25 164-109 12Z" fill="#dce7e1" opacity=".6" />
+  <path d="m682 326-91-75-79-31 25 164 109 12Z" fill="#536c64" opacity=".55" />
+  <path
+    d="m349 390 130 25 33 36 33-36 130-25-20 70-101 24-42-20-42 20-101-24Z"
+    fill="#162a24"
+    stroke="#50675d"
+    stroke-width="5"
+  />
+  <path d="m371 426 91 16 18 19-103-14Z" fill="#6eff7d" filter="url(#glow)" />
+  <path d="m653 426-91 16-18 19 103-14Z" fill="#6eff7d" filter="url(#glow)" />
+  <path d="m371 426 91 16 18 19-103-14Z" fill="url(#eye)" />
+  <path d="m653 426-91 16-18 19 103-14Z" fill="url(#eye)" />
+  <path
+    d="m342 377 123 15 47 36 47-36 123-15-8 37-117 16-45 31-45-31-117-16Z"
+    fill="url(#brow)"
+    stroke="#263e35"
+    stroke-width="4"
+  />
+  <path
+    d="m490 466-21 104 43 24 43-24-21-104-22 16Z"
+    fill="#567067"
+    stroke="#2c453b"
+    stroke-width="5"
+  />
+  <path d="m512 487-9 80 9 12 22-13-16-77Z" fill="#d0ddd5" />
+  <path
+    d="m350 481 108 36-30 68-52 18Z"
+    fill="#8fa59b"
+    stroke="#486457"
+    stroke-width="4"
+  />
+  <path
+    d="m674 481-108 36 30 68 52 18Z"
+    fill="#5b7769"
+    stroke="#486457"
+    stroke-width="4"
+  />
+  <path
+    d="m410 608 69-16 33 14 33-14 69 16-9 64-58 39h-70l-58-39Z"
+    fill="#172f26"
+    stroke="#5a7364"
+    stroke-width="5"
+  />
+  <path
+    d="M441 617v51m29-57v77m28-75v83m28-83v83m28-85v77m29-71v51"
+    stroke="#a8bcb0"
+    stroke-width="12"
+  />
+  <path
+    d="m385 662 78 65h98l78-65-24 56-51 44H460l-51-44Z"
+    fill="#d1ded3"
+    stroke="#556f5f"
+    stroke-width="4"
+  />
+  <g fill="#c9d7cf" stroke="#4a6455" stroke-width="4">
+    <circle cx="362" cy="348" r="11" />
+    <circle cx="662" cy="348" r="11" />
+    <circle cx="361" cy="552" r="10" />
+    <circle cx="663" cy="552" r="10" />
+    <circle cx="415" cy="684" r="9" />
+    <circle cx="609" cy="684" r="9" />
+  </g>
+  <path
+    d="m154 750 145-91 157 185-100 100H90Z"
+    fill="#15442e"
+    stroke="#306045"
+    stroke-width="5"
+  />
+  <path
+    d="m870 750-145-91-157 185 100 100h266Z"
+    fill="#0b2b20"
+    stroke="#244f37"
+    stroke-width="5"
+  />
+  <path d="m299 659 157 185-35 100-92-134Z" fill="#337e50" opacity=".5" />
+  <path d="m725 659-157 185 35 100 92-134Z" fill="#041810" opacity=".65" />
+  <path
+    d="M432 925q80-32 160 0"
+    fill="none"
+    stroke="#809b7e"
+    stroke-width="16"
+  />
+  <circle
+    cx="512"
+    cy="913"
+    r="45"
+    fill="#344e3d"
+    stroke="#bacab1"
+    stroke-width="8"
+  />
+  <path
+    d="m512 883 25 29-25 29-25-29Z"
+    fill="#42b966"
+    stroke="#84e991"
+    stroke-width="3"
+  />
+</svg>
