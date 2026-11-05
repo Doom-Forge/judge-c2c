@@ -22,7 +22,7 @@
     "ENVIRONMENT": "production",
     "MATRIX_MODE": "true",
     "MATRIX_START_LIMIT": "80",
-    "CORS_ALLOWED_ORIGINS": "https://doomforge-arena.technical-vitc.workers.dev",
+    "CORS_ALLOWED_ORIGINS": "https://doomforge-arena.technical-vitc.workers.dev,https://doombot.180dcvitc.org",
     "DEMO_MODE": "false",
     "PREVIEW_TESTING": "false",
     "ORG_NAME": "180DC-VIT-CHENNAI",
