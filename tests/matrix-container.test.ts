@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { Miniflare } from './miniflare';
+import { acquireMatrixSlot } from '../src/matrix-capacity';
 import { expect, it, vi } from 'vitest';
 import { NoyyalMatrixRunner } from '../src/matrix-workflow';
 import matrices from '../matrix-runner/matrices.json';
@@ -14,6 +17,7 @@ function fixture(
       durationMs,
       detail,
     })),
+  db?: D1Database,
 ) {
   const values = new Map();
   const container = {
@@ -35,6 +39,7 @@ function fixture(
     put: async (key: string, value: unknown) => {
       values.set(key, value);
     },
+    delete: async (key: string) => values.delete(key),
     setAlarm: vi.fn(),
     deleteAlarm: vi.fn(),
   };
@@ -43,14 +48,14 @@ function fixture(
     {
       MATRIX_IMAGE_URI: image,
       ADMIN_TOKEN: 'never-send-this',
-      DB: {
+      DB: db ?? {
         prepare: () => ({
           bind: () => ({ run: async () => ({ meta: { changes: 1 } }) }),
         }),
       },
     } as unknown as Env,
   );
-  return { runner, container };
+  return { runner, container, storage, values };
 }
 it('executes without internet or credentials and destroys single-use instances', async () => {
   const { runner, container } = fixture();
@@ -62,7 +67,7 @@ it('executes without internet or credentials and destroys single-use instances',
   expect(report.overallScore).toBe(100);
   expect(container.start).toHaveBeenCalledWith({
     image,
-    instance: 'standard-1',
+    instance: 'basic',
     enableInternet: false,
     env: {},
     entrypoint: ['sleep', 'infinity'],
@@ -100,4 +105,56 @@ it('rejects forged evidence and still destroys the guest', async () => {
     runner.evaluate({ repository: 'noyyal-treasury', image, files: [] }),
   ).rejects.toThrow('MATRIX_UNKNOWN_CHECK');
   expect(container.destroy).toHaveBeenCalledTimes(1);
+});
+
+it('retains uncertain capacity until an alarm confirms destruction', async () => {
+  const mf = new Miniflare({
+    modules: true,
+    script: 'export default{}',
+    d1Databases: ['DB'],
+    compatibilityDate: '2026-08-01',
+  });
+  try {
+    const db = (await mf.getD1Database('DB')) as unknown as D1Database;
+    for (const file of [
+      '0028_matrix_capacity.sql',
+      '0031_matrix_cost_controls.sql',
+    ])
+      for (const sql of readFileSync('migrations/' + file, 'utf8')
+        .split(';')
+        .filter((s) => s.trim()))
+        await db.prepare(sql).run();
+    await acquireMatrixSlot(db, 'noyyal-treasury', 'other');
+    const { runner, container, storage, values } = fixture(undefined, db);
+    container.destroy.mockRejectedValueOnce(new Error('DESTROY_FAILED'));
+    await expect(
+      runner.evaluate({ repository: 'noyyal-treasury', image, files: [] }),
+    ).rejects.toThrow('DESTROY_FAILED');
+    expect(values.has('activeCapacity')).toBe(true);
+    expect(storage.deleteAlarm).not.toHaveBeenCalled();
+    await expect(
+      acquireMatrixSlot(db, 'noyyal-treasury', 'next', Date.now() + 99999999),
+    ).rejects.toThrow('MATRIX_BUSY');
+    container.destroy.mockRejectedValueOnce(new Error('STILL_RUNNING'));
+    await runner.alarm();
+    await expect(
+      acquireMatrixSlot(db, 'noyyal-treasury', 'next'),
+    ).rejects.toThrow('MATRIX_BUSY');
+    await runner.alarm();
+    expect(values.has('activeCapacity')).toBe(false);
+    await expect(
+      acquireMatrixSlot(db, 'noyyal-treasury', 'next'),
+    ).resolves.toBeTruthy();
+  } finally {
+    await mf.dispose();
+  }
+});
+it('releases pre-start capacity when arming the alarm fails', async () => {
+  const { runner, container, storage, values } = fixture();
+  storage.setAlarm.mockRejectedValueOnce(new Error('ALARM_FAILED'));
+  await expect(
+    runner.evaluate({ repository: 'noyyal-treasury', image, files: [] }),
+  ).rejects.toThrow('ALARM_FAILED');
+  expect(container.start).not.toHaveBeenCalled();
+  expect(values.has('activeCapacity')).toBe(false);
 });

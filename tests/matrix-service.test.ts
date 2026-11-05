@@ -66,7 +66,7 @@ beforeAll(async () => {
   } as unknown as Env;
 });
 afterAll(async () => mf.dispose());
-it('bounds container concurrency and recovers expired leases without releasing another owner', async () => {
+it('bounds container concurrency and never expires uncertain owners', async () => {
   const one = await acquireMatrixSlot(env.DB, 'test-repo', 'one', 1000);
   await acquireMatrixSlot(env.DB, 'test-repo', 'two', 1000);
   await expect(
@@ -76,15 +76,13 @@ it('bounds container concurrency and recovers expired leases without releasing a
   await expect(
     acquireMatrixSlot(env.DB, 'test-repo', 'three', 1000),
   ).rejects.toThrow('MATRIX_BUSY');
+  await expect(
+    acquireMatrixSlot(env.DB, 'test-repo', 'three', 181001),
+  ).rejects.toThrow('MATRIX_BUSY');
+  await releaseMatrixSlot(env.DB, one, 'one');
   expect(await acquireMatrixSlot(env.DB, 'test-repo', 'three', 181001)).toBe(
     one,
   );
-  await releaseMatrixSlot(env.DB, one, 'one');
-  expect(
-    await env.DB.prepare('SELECT owner FROM matrix_capacity WHERE slot=?')
-      .bind(one)
-      .first('owner'),
-  ).toBe('three');
 });
 it('requires organizer auth for matrix overview', async () => {
   expect(

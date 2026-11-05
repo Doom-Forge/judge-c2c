@@ -133,8 +133,29 @@ async function boundedStream(stream: ReadableStream | null, max: number) {
 }
 class MatrixRunner extends DurableObject<Env> {
   protected repository: RepoKey = 'noyyal-treasury';
+  private async destroyAndRelease() {
+    const lease = await this.ctx.storage.get<{ slot: string; owner: string }>(
+      'activeCapacity',
+    );
+    try {
+      if (!this.ctx.container) throw new Error('MATRIX_CONTAINER_NOT_BOUND');
+      await this.ctx.container.destroy();
+      if (lease)
+        await releaseMatrixSlot(dbFor(this.env), lease.slot, lease.owner);
+      await this.ctx.storage.delete('activeCapacity');
+      await this.ctx.storage.deleteAlarm();
+    } catch (error) {
+      // Uncertain destruction never frees admission capacity, including after expiry.
+      await this.ctx.storage.setAlarm(Date.now() + 30000);
+      throw error;
+    }
+  }
   async alarm() {
-    await this.ctx.container?.destroy();
+    try {
+      await this.destroyAndRelease();
+    } catch {
+      // The persisted lease and retry alarm remain until destruction is confirmed.
+    }
   }
   async evaluate(raw: unknown) {
     const request = requestSchema.parse(raw);
@@ -156,9 +177,11 @@ class MatrixRunner extends DurableObject<Env> {
     // Reserve even failed starts; all RPC callers, including diagnostics, pass here.
     try {
       await reserveMatrixStart(capacityDB, this.env, owner);
+      await this.ctx.storage.put('activeCapacity', { slot, owner });
       await this.ctx.storage.setAlarm(Date.now() + 180000);
     } catch (error) {
       await releaseMatrixSlot(capacityDB, slot, owner);
+      await this.ctx.storage.delete('activeCapacity');
       throw error;
     }
     let process: ExecProcess | undefined;
@@ -167,7 +190,7 @@ class MatrixRunner extends DurableObject<Env> {
       try {
         process?.kill(9);
       } catch {}
-      void container.destroy();
+      void this.destroyAndRelease().catch(() => undefined);
     }, 150000);
     try {
       container.start({
@@ -237,12 +260,7 @@ class MatrixRunner extends DurableObject<Env> {
       try {
         process?.kill(9);
       } catch {}
-      try {
-        await container.destroy();
-        await this.ctx.storage.deleteAlarm();
-      } finally {
-        await releaseMatrixSlot(capacityDB, slot, owner);
-      }
+      await this.destroyAndRelease();
     }
   }
 }
