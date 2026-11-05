@@ -97,3 +97,29 @@ Never copy live secrets into review deployments. Preserve original account data
 and backups during migration; neither the old databases nor the old deployment
 are deleted by this change. The private backup receipts include SHA-256 hashes
 and successful SQLite integrity checks.
+
+## Cross origin clients and Arena integration
+
+`CORS_ALLOWED_ORIGINS` is a comma-separated list of exact HTTPS origins, without
+paths, trailing slashes or wildcard domains. Explicit localhost HTTP origins may
+be used for local development. Same-origin requests and server-side requests
+without an Origin header remain supported. Cross-origin browser clients send the
+organizer bearer token; CORS does not replace authentication. Matrix OPTIONS
+preflights allow GET, POST, Authorization and Content-Type. Allowed origins receive
+CORS headers on API errors as well as successes. No credentialed wildcard or
+cookie sharing is enabled. Add a new frontend origin to this variable and deploy
+with Wrangler; the production default allows the Arena Worker origin.
+
+The Arena frontend uses its own GitHub OAuth sessions and calls an authenticated
+server-side service binding to this Worker. Its `MATRIX_BACKEND_TOKEN` is a secret
+containing the existing organizer credential; never bundle this value into
+frontend JavaScript or a Vite environment variable. The bridge applies Arena role,
+assignment, PR head and publication checks before exposing evidence. Email OTP
+sign-in is removed from the Arena application; GitHub OAuth is retained.
+
+See `docs/matrix-cost-controls.md` for the 31-day execution-start budget, four
+concurrent execution cap, trusted baseline cache and lower-cost instance choice.
+The application budget is not Cloudflare account billing. It does not include
+other Workers, D1, queues, storage, logs or pre-migration usage. Only two real
+repository matrices are configured; the cap of four does not invent two more
+repository profiles or run four always-on instances.

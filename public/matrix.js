@@ -284,7 +284,10 @@
     if (!token) return;
     clearInterval(interval);
     await refresh();
-    if (token) interval = setInterval(refresh, 10000);
+    if (token)
+      interval = setInterval(() => {
+        if (!document.hidden) void refresh();
+      }, 30000);
   });
   $('lock').addEventListener('click', () => {
     lock();

@@ -142,3 +142,37 @@ it('serves preflight before auth and applies CORS to unauthenticated API errors 
   expect(denied.status).toBe(403);
   expect(denied.headers.has('access-control-allow-origin')).toBe(false);
 });
+
+it('preserves actionable matrix budget and capacity errors with cross-origin headers', async () => {
+  const worker = (await import('../src/index')).default;
+  for (const [code, status] of [
+    ['MATRIX_BUDGET_LIMIT', 429],
+    ['MATRIX_BUSY', 429],
+    ['MATRIX_INVALID_BUDGET_CONFIG', 503],
+  ] as const) {
+    const bindings = {
+      ...env,
+      MATRIX_MODE: 'true',
+      ADMIN_TOKEN: 's'.repeat(40),
+      DB: {
+        prepare() {
+          throw new Error(code);
+        },
+      },
+    } as unknown as import('../src/env').Env;
+    const request = new Request(origin + '/api/matrix/budget', {
+      headers: {
+        Origin: 'https://arena.example',
+        Authorization: 'Bearer ' + 's'.repeat(40),
+      },
+    });
+    const response = await worker.fetch(request, bindings, {
+      waitUntil() {},
+    } as unknown as ExecutionContext);
+    expect(response.status).toBe(status);
+    expect(((await response.json()) as { error: string }).error).toBe(code);
+    expect(response.headers.get('access-control-allow-origin')).toBe(
+      'https://arena.example',
+    );
+  }
+});

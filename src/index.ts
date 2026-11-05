@@ -82,20 +82,34 @@ export default {
           : await api(request, env);
       else response = await env.ASSETS.fetch(request);
     } catch (error) {
+      const matrixError =
+        env.MATRIX_MODE === 'true' &&
+        url.pathname.startsWith('/api/matrix/') &&
+        error instanceof Error &&
+        [
+          'MATRIX_BUDGET_LIMIT',
+          'MATRIX_BUSY',
+          'MATRIX_INVALID_BUDGET_CONFIG',
+        ].includes(error.message)
+          ? error.message
+          : null;
       const status =
-        error instanceof z.ZodError || error instanceof SyntaxError
-          ? 400
-          : error instanceof Error && error.message === 'BODY_LIMIT'
-            ? 413
-            : 503;
+        matrixError === 'MATRIX_BUDGET_LIMIT' || matrixError === 'MATRIX_BUSY'
+          ? 429
+          : error instanceof z.ZodError || error instanceof SyntaxError
+            ? 400
+            : error instanceof Error && error.message === 'BODY_LIMIT'
+              ? 413
+              : 503;
       response = Response.json(
         {
           error:
-            status === 400
+            matrixError ??
+            (status === 400
               ? 'INVALID_INPUT'
               : status === 413
                 ? 'BODY_LIMIT'
-                : 'SERVICE_UNAVAILABLE',
+                : 'SERVICE_UNAVAILABLE'),
           traceId,
         },
         { status },
