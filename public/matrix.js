@@ -74,7 +74,12 @@
             node('h3', repo.full_name),
             node(
               'p',
-              `${data.runs.filter((run) => run.repository_id === repo.id).length} retained attempts · versioned repository checks`,
+              repo.evaluation_status === 'READY'
+                ? `${data.runs.filter((run) => run.repository_id === repo.id).length} retained attempts · versioned repository checks`
+                : repo.evaluation_status === 'SPECIFICATION_REQUIRED'
+                  ? 'Challenge specification required · evaluation and scores are disabled.'
+                  : 'No trusted matrix configured · evaluation and scores are disabled.',
+              repo.evaluation_status === 'READY' ? undefined : 'subtle',
             ),
           );
           return card;

@@ -3,7 +3,11 @@ import { isMatrixOriginAllowed } from './matrix-cors';
 import { z } from 'zod';
 import { canonical, digest, sha } from './domain';
 import { equalSecret, boundedBody } from './security';
-import { validateSnapshot } from './matrix';
+import {
+  matrixRepositoryStatus,
+  specificationRequiredRepositories,
+  validateSnapshot,
+} from './matrix';
 import { organizationEnv } from './organization';
 import { GitHub } from './github';
 import type { Contract } from './domain';
@@ -84,6 +88,13 @@ export async function acceptMatrixPR(
     ].includes(p.action)
   )
     return json({ status: 'ignored' }, 202);
+  if (
+    specificationRequiredRepositories.includes(
+      p.repository
+        .full_name as (typeof specificationRequiredRepositories)[number],
+    )
+  )
+    return json({ error: 'CHALLENGE_SPECIFICATION_REQUIRED' }, 403);
   const repo = await db
     .prepare(
       'SELECT m.*,g.accessible,c.installation_id FROM matrix_repositories m JOIN github_repositories g ON g.id=m.repository_id CROSS JOIN github_connection c WHERE m.repository_id=? AND m.full_name=? AND c.id=1',
@@ -315,9 +326,16 @@ export async function matrixApi(request: Request, env: Env) {
     const [repositories, runs] = await Promise.all([
       db
         .prepare(
-          'SELECT g.id,g.full_name,m.baseline_sha,m.matrix_version FROM github_repositories g LEFT JOIN matrix_repositories m ON m.repository_id=g.id WHERE g.accessible=1',
+          'SELECT g.id,g.full_name,m.baseline_sha,m.matrix_version,m.matrix_digest,m.image_uri FROM github_repositories g LEFT JOIN matrix_repositories m ON m.repository_id=g.id WHERE g.accessible=1',
         )
-        .all(),
+        .all<{
+          id: number;
+          full_name: string;
+          baseline_sha: string | null;
+          matrix_version: string | null;
+          matrix_digest: string | null;
+          image_uri: string | null;
+        }>(),
       db
         .prepare(
           'SELECT * FROM matrix_runs ORDER BY created_at DESC,rowid DESC LIMIT 100',
@@ -326,7 +344,13 @@ export async function matrixApi(request: Request, env: Env) {
     ]);
     return json({
       mode: 'cloudflare-containers',
-      repositories: repositories.results,
+      repositories: repositories.results.map((repository) => ({
+        ...repository,
+        evaluation_status: matrixRepositoryStatus(
+          repository.full_name,
+          !!repository.matrix_version,
+        ),
+      })),
       runs: runs.results.map(decode),
     });
   }

@@ -2,6 +2,35 @@ import { z } from 'zod';
 import { pathSchema } from './domain';
 
 export const categories = ['scalability', 'security', 'usefulness'] as const;
+// These repositories are intentionally visible while challenge specifications
+// are being prepared. They have no trusted matrix, baseline, or container image
+// yet and must not be evaluated or scored.
+export const specificationRequiredRepositories = [
+  '180DC-VIT-CHENNAI/mazhai-cover',
+  '180DC-VIT-CHENNAI/pricingpulse',
+  '180DC-VIT-CHENNAI/veera-footwear',
+  '180DC-VIT-CHENNAI/queueforge',
+] as const;
+export const matrixRepositoryStatus = (
+  fullName: string,
+  configured: boolean,
+) => {
+  if (
+    specificationRequiredRepositories.includes(
+      fullName as (typeof specificationRequiredRepositories)[number],
+    )
+  )
+    return 'SPECIFICATION_REQUIRED';
+  if (
+    configured &&
+    [
+      '180DC-VIT-CHENNAI/noyyal-treasury',
+      '180DC-VIT-CHENNAI/rasoi-offer-roulette',
+    ].includes(fullName)
+  )
+    return 'READY';
+  return 'NOT_CONFIGURED';
+};
 const checkSchema = z
   .object({
     id: z.string().min(1).max(100),

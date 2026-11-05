@@ -6,17 +6,22 @@ import type { Env } from '../src/env';
 import { acquireMatrixSlot, releaseMatrixSlot } from '../src/matrix-capacity';
 let mf: Miniflare, env: Env;
 const jobs: string[] = [];
-const payload = (sha = 'b'.repeat(40), date = '2026-11-04T10:00:00Z') => ({
+const payload = (
+  sha = 'b'.repeat(40),
+  date = '2026-11-04T10:00:00Z',
+  repositoryId = 1442222461,
+  repositoryName = '180DC-VIT-CHENNAI/noyyal-treasury',
+) => ({
   action: 'opened',
   installation: { id: 42 },
   repository: {
-    id: 1442222461,
-    full_name: '180DC-VIT-CHENNAI/noyyal-treasury',
+    id: repositoryId,
+    full_name: repositoryName,
   },
   pull_request: {
     number: 4,
     head: { sha },
-    base: { repo: { id: 1442222461 } },
+    base: { repo: { id: repositoryId } },
     updated_at: date,
     state: 'open',
   },
@@ -53,6 +58,16 @@ beforeAll(async () => {
     )
     .bind('a'.repeat(40), 'c'.repeat(64))
     .run();
+  for (const [index, name] of [
+    'mazhai-cover',
+    'pricingpulse',
+    'veera-footwear',
+    'queueforge',
+  ].entries())
+    await db
+      .prepare('INSERT INTO github_repositories VALUES(?,?,?,?,1)')
+      .bind(1442222462 + index, `180DC-VIT-CHENNAI/${name}`, 0, 'main')
+      .run();
   env = {
     DB: db,
     ORG_DB: db,
@@ -89,6 +104,77 @@ it('requires organizer auth for matrix overview', async () => {
     (await matrixApi(new Request('https://test/api/matrix/overview'), env))
       .status,
   ).toBe(401);
+});
+it('shows the four new repos as specification-required and refuses their PRs', async () => {
+  const response = await matrixApi(
+    new Request('https://test/api/matrix/overview', {
+      headers: { Authorization: `Bearer ${'x'.repeat(40)}` },
+    }),
+    env,
+  );
+  const overview = (await response.json()) as {
+    repositories: {
+      id: number;
+      full_name: string;
+      evaluation_status: string;
+    }[];
+  };
+  const expected = [
+    'mazhai-cover',
+    'pricingpulse',
+    'veera-footwear',
+    'queueforge',
+  ];
+  for (const [index, name] of expected.entries()) {
+    const fullName = `180DC-VIT-CHENNAI/${name}`;
+    expect(
+      overview.repositories.find(
+        (repository) => repository.full_name === fullName,
+      )?.evaluation_status,
+    ).toBe('SPECIFICATION_REQUIRED');
+    const result = await acceptMatrixPR(
+      payload(
+        'b'.repeat(40),
+        '2026-11-04T10:00:00Z',
+        1442222462 + index,
+        fullName,
+      ),
+      env,
+      `unconfigured-${name}`,
+      `hash-${name}`,
+    );
+    expect(result.status).toBe(403);
+  }
+  expect(jobs).toHaveLength(0);
+});
+it('keeps a specification-required repo blocked even if a matrix row exists', async () => {
+  const repositoryId = 1442222465;
+  await env.DB.prepare('INSERT INTO matrix_repositories VALUES(?,?,?,?,?,?)')
+    .bind(
+      repositoryId,
+      '180DC-VIT-CHENNAI/queueforge',
+      'a'.repeat(40),
+      'unreviewed-v1',
+      'd'.repeat(64),
+      'registry.cloudflare.com/fixture/image@sha256:' + '2'.repeat(64),
+    )
+    .run();
+  const result = await acceptMatrixPR(
+    payload(
+      'b'.repeat(40),
+      '2026-11-04T10:00:00Z',
+      repositoryId,
+      '180DC-VIT-CHENNAI/queueforge',
+    ),
+    env,
+    'unreviewed-queueforge',
+    'unreviewed-queueforge-hash',
+  );
+  expect(result.status).toBe(403);
+  expect(await result.json()).toEqual({
+    error: 'CHALLENGE_SPECIFICATION_REQUIRED',
+  });
+  expect(jobs).toHaveLength(0);
 });
 it('queues once, rejects conflicting replay, and supersedes on new head', async () => {
   const first = await acceptMatrixPR(payload(), env, 'delivery-1', 'hash-1');
