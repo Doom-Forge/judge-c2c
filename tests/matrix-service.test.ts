@@ -33,6 +33,7 @@ beforeAll(async () => {
     '0004_organization.sql',
     '0027_matrix_judging.sql',
     '0028_matrix_capacity.sql',
+    '0031_matrix_cost_controls.sql',
   ])
     for (const sql of readFileSync('migrations/' + file, 'utf8')
       .split(';')
@@ -282,4 +283,25 @@ it('accepts ready_for_review without regrading an unchanged head', async () => {
       'SELECT COUNT(*) AS n FROM matrix_runs WHERE pr_number=12',
     ).first('n'),
   ).toBe(1);
+});
+it('protects application budget accounting with bearer authentication', async () => {
+  const denied = await matrixApi(
+    new Request('https://matrix.test/api/matrix/budget'),
+    env,
+  );
+  expect(denied.status).toBe(401);
+  const response = await matrixApi(
+    new Request('https://matrix.test/api/matrix/budget', {
+      headers: { authorization: 'Bearer ' + env.ADMIN_TOKEN },
+    }),
+    env,
+  );
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    startLimit: 80,
+    startsRemaining: 80,
+    secondsPerStart: 180,
+    globalConcurrencyLimit: 4,
+    accounting: 'application_reservations_not_cloudflare_bill',
+  });
 });

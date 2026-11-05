@@ -15,10 +15,13 @@
   },
   "observability": {
     "enabled": true,
+    "head_sampling_rate": 0.1,
+    "logs": { "enabled": true, "invocation_logs": false },
   },
   "vars": {
     "ENVIRONMENT": "production",
     "MATRIX_MODE": "true",
+    "MATRIX_START_LIMIT": "80",
     "DEMO_MODE": "false",
     "PREVIEW_TESTING": "false",
     "ORG_NAME": "180DC-VIT-CHENNAI",

@@ -1,0 +1,11 @@
+# Matrix application cost controls
+
+`GET /api/matrix/budget` requires the same organizer bearer credential as the other matrix APIs. It returns `windowDays`, `startLimit`, `startsReserved`, `startsRemaining`, `secondsPerStart`, `reservedSeconds`, `globalConcurrencyLimit`, `repositoryConcurrencyLimit`, `instanceType`, and `accounting`.
+
+These are application reservations, not a Cloudflare invoice or account usage measurement. The rolling window is 31 days inclusive of its boundary. Every attempted container start, including diagnostics and retries, reserves 180 seconds atomically before starting. Failed starts retain their reservation. The default maximum is 80 starts; `MATRIX_START_LIMIT` may reduce this to an integer between 1 and 80. Invalid configuration fails closed. Existing historical usage before this migration is not reconstructed.
+
+Four concurrent leases are allowed globally in the matrix coordination database, and two per repository. Leases and the destruction alarm last 180 seconds; controller execution has a 150 second deadline. Cleanup attempts destruction before releasing its owner-specific lease and preserves the alarm if destruction fails. All matrix runners must share this database for the cap to apply globally.
+
+The named `basic` instance is configured using the documented Containers API; installed Worker types omit this named size, requiring a narrow type cast. A live Cloudflare canary must validate the size before rollout is described as verified. Observability remains enabled with request invocation logs disabled and sampling reduced.
+
+Only trusted workflow baseline execution populates the cache. Its identity includes the full repository, baseline SHA, matrix digest, and exact image URI/digest. Every expected check must be present and verified; verified failures remain useful baseline evidence. Cached reports are revalidated on read. Diagnostics never populate this cache, head execution remains fresh, and historical run reports remain intact.

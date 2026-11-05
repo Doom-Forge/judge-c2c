@@ -1,3 +1,5 @@
+import { matrixBudget } from './matrix-budget';
+import { isMatrixOriginAllowed } from './matrix-cors';
 import { z } from 'zod';
 import { canonical, digest, sha } from './domain';
 import { equalSecret, boundedBody } from './security';
@@ -276,6 +278,8 @@ export async function matrixApi(request: Request, env: Env) {
     return json({ error: 'UNAUTHORIZED' }, 401);
   const path = new URL(request.url).pathname,
     db = dbFor(env);
+  if (request.method === 'GET' && path === '/api/matrix/budget')
+    return json(await matrixBudget(db, env));
   if (request.method === 'POST' && path === '/api/matrix/diagnostic') {
     const body = z
       .object({
@@ -335,8 +339,7 @@ export async function matrixApi(request: Request, env: Env) {
   if (!run) return json({ error: 'NOT_FOUND' }, 404);
   if (request.method === 'GET' && !match[2]) return json(decode(run));
   if (request.method === 'POST' && match[2]) {
-    const origin = request.headers.get('origin');
-    if (origin && origin !== new URL(request.url).origin)
+    if (!isMatrixOriginAllowed(request, env))
       return json({ error: 'ORIGIN_NOT_ALLOWED' }, 403);
     if (!['FAILED', 'COMPLETED'].includes(run.state))
       return json({ error: 'RETRY_NOT_AVAILABLE' }, 409);

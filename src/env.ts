@@ -1,4 +1,6 @@
 export interface Env {
+  MATRIX_START_LIMIT?: string;
+  CORS_ALLOWED_ORIGINS?: string;
   DEFAULT_PR_REVIEWER?: string;
   MATRIX_MODE?: string;
   MATRIX_IMAGE_URI?: string;

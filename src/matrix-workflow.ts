@@ -13,6 +13,8 @@ import { ensureDefaultReviewer } from './default-reviewer';
 import { doombotNoticeBody, ensureDoomBotNotice } from './doombot-notice';
 import { organizationEnv } from './organization';
 import { scoreMatrix, validateSnapshot } from './matrix';
+import { reserveMatrixStart } from './matrix-budget';
+import { readBaseline, retainBaseline } from './matrix-baseline';
 import { acquireMatrixSlot, releaseMatrixSlot } from './matrix-capacity';
 import {
   acceptMatrixPR,
@@ -151,7 +153,14 @@ class MatrixRunner extends DurableObject<Env> {
     const owner = crypto.randomUUID(),
       capacityDB = dbFor(this.env);
     const slot = await acquireMatrixSlot(capacityDB, this.repository, owner);
-    await this.ctx.storage.setAlarm(Date.now() + 180000);
+    // Reserve even failed starts; all RPC callers, including diagnostics, pass here.
+    try {
+      await reserveMatrixStart(capacityDB, this.env, owner);
+      await this.ctx.storage.setAlarm(Date.now() + 180000);
+    } catch (error) {
+      await releaseMatrixSlot(capacityDB, slot, owner);
+      throw error;
+    }
     let process: ExecProcess | undefined;
     const deadline = Date.now() + 150000;
     const timer = setTimeout(() => {
@@ -163,7 +172,10 @@ class MatrixRunner extends DurableObject<Env> {
     try {
       container.start({
         image: request.image,
-        instance: 'standard-1',
+        // Named basic instance is supported by the platform; installed workers-types lags.
+        // https://developers.cloudflare.com/containers/platform/limits/
+        // Live deployment validation is required before treating this size as verified.
+        instance: 'basic' as ContainerStartupOptions['instance'],
         enableInternet: false,
         env: {},
         entrypoint: ['sleep', 'infinity'],
@@ -225,9 +237,12 @@ class MatrixRunner extends DurableObject<Env> {
       try {
         process?.kill(9);
       } catch {}
-      await container.destroy();
-      await releaseMatrixSlot(capacityDB, slot, owner);
-      await this.ctx.storage.deleteAlarm();
+      try {
+        await container.destroy();
+        await this.ctx.storage.deleteAlarm();
+      } finally {
+        await releaseMatrixSlot(capacityDB, slot, owner);
+      }
     }
   }
 }
@@ -337,6 +352,20 @@ export class MatrixEvaluationWorkflow extends WorkflowEntrypoint<
               key = repoKey(run.full_name),
               github = await clientFor(this.env, run),
               commit = kind === 'baseline' ? run.baseline_sha : run.head_sha;
+            const identity = {
+              repository: run.full_name,
+              baselineSha: run.baseline_sha,
+              matrixDigest: run.matrix_digest,
+              imageUri: run.image_uri,
+            };
+            if (kind === 'baseline') {
+              const cached = await readBaseline(
+                db,
+                identity,
+                matrices[key].checks,
+              );
+              if (cached) return cached;
+            }
             const files = await matrixSnapshot(github, run.full_name, commit);
             await current(this.env, id);
             const namespace =
@@ -347,11 +376,14 @@ export class MatrixEvaluationWorkflow extends WorkflowEntrypoint<
             const stub = namespace.get(namespace.newUniqueId()) as unknown as {
               evaluate(raw: unknown): Promise<MatrixReport>;
             };
-            return stub.evaluate({
+            const report = await stub.evaluate({
               repository: key,
               image: run.image_uri,
               files,
             });
+            if (kind === 'baseline')
+              await retainBaseline(db, identity, matrices[key].checks, report);
+            return report;
           },
         );
       const baseline = await execute('baseline');
