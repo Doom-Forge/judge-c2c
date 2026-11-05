@@ -1,5 +1,10 @@
 import { actionsBroker } from './actions-runner';
 import { matrixApi } from './matrix-service';
+import {
+  isMatrixOriginAllowed,
+  matrixPreflight,
+  withMatrixCors,
+} from './matrix-cors';
 import { reconcileMatrix } from './matrix-workflow';
 export {
   MatrixEvaluationWorkflow,
@@ -30,7 +35,11 @@ export default {
     let response: Response;
     try {
       if (env.MATRIX_MODE === 'true' && url.pathname.startsWith('/api/matrix/'))
-        response = await matrixApi(request, env);
+        response =
+          matrixPreflight(request, env) ??
+          (!isMatrixOriginAllowed(request, env)
+            ? Response.json({ error: 'ORIGIN_NOT_ALLOWED' }, { status: 403 })
+            : await matrixApi(request, env));
       else if (env.MATRIX_MODE === 'true' && url.pathname.startsWith('/api/'))
         response = Response.json({ error: 'NOT_FOUND' }, { status: 404 });
       else if (
@@ -95,7 +104,10 @@ export default {
         JSON.stringify({ event: 'request_failed', traceId, status }),
       );
     }
-    response = new Response(response.body, response);
+    response =
+      env.MATRIX_MODE === 'true' && url.pathname.startsWith('/api/matrix/')
+        ? withMatrixCors(request, env, response)
+        : new Response(response.body, response);
     response.headers.set('x-trace-id', traceId);
     response.headers.set('x-content-type-options', 'nosniff');
     response.headers.set('referrer-policy', 'same-origin');
