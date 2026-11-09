@@ -23,8 +23,19 @@ function fixture() {
   sql.exec(readFileSync('migrations/0012_artifact_store.sql', 'utf8'));
   sql.exec('CREATE TABLE github_repositories(id INTEGER PRIMARY KEY)');
   sql.exec('CREATE TABLE teams(id TEXT PRIMARY KEY,status TEXT NOT NULL)');
+  sql.exec(
+    'CREATE TABLE team_members(id TEXT PRIMARY KEY,team_id TEXT,active INTEGER);',
+  );
+  // Minimal parity for the participant identity eligibility query. This file
+  // intentionally uses a small in-memory schema instead of the D1 migrations.
+  sql.exec(
+    'CREATE TABLE team_roster_members(id TEXT PRIMARY KEY,team_id TEXT,linked_team_member_id TEXT,active INTEGER NOT NULL DEFAULT 1);',
+  );
   sql.exec(readFileSync('migrations/0018_confidential_security.sql', 'utf8'));
   sql.exec(readFileSync('migrations/0021_console_identities.sql', 'utf8'));
+  sql.exec(
+    'ALTER TABLE console_identities ADD COLUMN team_member_id TEXT; ALTER TABLE console_identities ADD COLUMN team_roster_member_id TEXT;',
+  );
   sql
     .prepare('INSERT INTO evaluations(id,baseline_sha) VALUES(?,?)')
     .run(id, 'base');

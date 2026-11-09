@@ -1,0 +1,865 @@
+.occ-page {
+  display: grid;
+  gap: 1.4rem;
+  width: min(100%, 1480px);
+  margin-inline: auto;
+  padding: 2rem clamp(1.25rem, 3vw, 2.5rem) 3.5rem;
+  color: var(--text);
+}
+
+.occ-demo-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--raised);
+  color: var(--text);
+  font-size: 0.9375rem;
+}
+
+.occ-demo-banner strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.occ-demo-banner > span:last-child {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.occ-demo-indicator {
+  width: 0.48rem;
+  height: 0.48rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.occ-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0 0.25rem;
+}
+
+.occ-heading h1 {
+  margin: 0 0 0.25rem;
+  font-family: 'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(2rem, 3.2vw, 2.65rem);
+  font-weight: 640;
+  letter-spacing: -0.045em;
+  line-height: 1.1;
+}
+
+.occ-heading p,
+.occ-panel > header p {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.occ-access-state,
+.occ-state-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.occ-access-state > svg,
+.occ-state-message > svg {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  margin-top: 0.12rem;
+  color: var(--accent);
+}
+
+.occ-access-state strong {
+  color: var(--text);
+}
+
+.occ-access-state p {
+  margin: 0.35rem 0 0;
+}
+
+.occ-state-error {
+  border-color: color-mix(in srgb, var(--error) 55%, var(--border));
+  color: var(--error);
+}
+
+.occ-state-error > svg {
+  color: var(--error);
+}
+
+.occ-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.occ-metric-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.occ-metric-card > div {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem 1.05rem 1.05rem;
+}
+
+.occ-metric-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.occ-metric-icon {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--card));
+}
+
+.occ-metric-icon svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.occ-metric-card > div > strong {
+  overflow: hidden;
+  font-size: clamp(1.35rem, 2vw, 1.85rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.occ-metric-card > div > small {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.occ-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 0.85rem;
+}
+
+.occ-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.occ-panel > header {
+  align-items: flex-start;
+  padding: 1.25rem 1.4rem 0.9rem;
+}
+
+.occ-panel > header h2 {
+  margin: 0.3rem 0 0;
+  font-size: 1.125rem;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+}
+
+.occ-panel > div:last-child {
+  padding: 0.65rem 1.4rem 1.4rem;
+}
+
+.occ-track-list,
+.occ-stage-list {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.occ-track-row {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.occ-track-label,
+.occ-stage-row > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--text);
+  font-size: 0.9375rem;
+}
+
+.occ-track-label > span:last-child,
+.occ-stage-row strong {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.occ-track-bar,
+.occ-stage-bar {
+  overflow: hidden;
+  height: 0.4rem;
+  border-radius: 99px;
+  background: var(--raised);
+}
+
+.occ-track-bar > span,
+.occ-stage-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.occ-track-row small,
+.occ-small-note {
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.occ-stage-row {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.occ-stage-row strong {
+  color: var(--text);
+}
+
+.occ-unavailable-note {
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--raised) 35%, transparent);
+}
+
+.occ-unavailable-note svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+  color: var(--accent);
+}
+
+.occ-unavailable-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.occ-small-note {
+  margin: 0.75rem 0 0;
+}
+
+.occ-team-panel > header {
+  align-items: center;
+}
+
+.occ-team-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.occ-team-actions button,
+.occ-panel button {
+  min-height: 44px;
+  padding-inline: 0.75rem;
+  font-size: 0.9375rem;
+}
+
+.occ-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 0.75rem;
+}
+
+.occ-search {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: min(100%, 20rem);
+  min-height: 44px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.occ-search svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.occ-search input,
+.occ-status-filter select,
+.occ-field input,
+.occ-field textarea,
+.occ-panel textarea {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
+.occ-search input::placeholder,
+.occ-panel textarea::placeholder {
+  color: var(--muted);
+}
+
+.occ-status-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 44px;
+  padding: 0 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.occ-status-filter select {
+  width: auto;
+  min-width: 5.2rem;
+  text-transform: capitalize;
+}
+
+.occ-result-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.occ-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+}
+
+.occ-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.occ-table th {
+  padding: 0.68rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--raised) 38%, var(--card));
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 650;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.occ-table td {
+  padding: 0.74rem 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  color: var(--text);
+  font-size: 0.9375rem;
+}
+
+.occ-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.occ-table tbody tr:hover {
+  background: color-mix(in srgb, var(--raised) 30%, transparent);
+}
+
+.occ-table td:first-child {
+  min-width: 11rem;
+}
+
+.occ-table td:first-child strong,
+.occ-table td:first-child small {
+  display: block;
+}
+
+.occ-assignment-cell {
+  display: grid;
+  justify-items: start;
+  gap: 0.25rem;
+}
+
+.occ-assignment-cell small {
+  max-width: 13rem;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+}
+
+.occ-table td:first-child strong {
+  font-size: 0.9375rem;
+  font-weight: 620;
+}
+
+.occ-table td:first-child small {
+  max-width: 16rem;
+  overflow: hidden;
+  margin-top: 0.22rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+}
+
+.occ-muted {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.occ-inline-demo {
+  color: var(--accent);
+  font-size: 0.875rem;
+}
+
+.occ-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  padding: 2rem 1rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.occ-empty-state svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-bottom: 0.25rem;
+  color: var(--accent);
+}
+
+.occ-empty-state strong {
+  color: var(--text);
+  font-size: 0.9375rem;
+}
+
+.occ-empty-state span {
+  font-size: 0.875rem;
+}
+
+.occ-lower-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  align-items: start;
+  gap: 0.85rem;
+}
+
+.occ-config-stack {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.occ-import-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.occ-file-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 44px;
+  padding: 0.4rem 0.75rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.9375rem;
+}
+
+.occ-file-picker svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--accent);
+}
+
+.occ-file-picker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.occ-file-picker:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.occ-csv-label,
+.occ-field > span {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.occ-panel textarea,
+.occ-field textarea {
+  display: block;
+  min-height: 5rem;
+  resize: vertical;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  line-height: 1.5;
+}
+
+.occ-csv-label + textarea {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+.occ-csv-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  margin-top: 0.65rem;
+  color: var(--text);
+  font-size: 0.9375rem;
+}
+
+.occ-csv-summary span {
+  color: var(--muted);
+}
+
+.occ-validation-list {
+  display: grid;
+  gap: 0.28rem;
+  max-height: 8rem;
+  overflow: auto;
+  margin: 0.6rem 0 0;
+  padding: 0.65rem 0.75rem 0.65rem 1.8rem;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.occ-validation-error {
+  border: 1px solid color-mix(in srgb, var(--error) 55%, var(--border));
+  background: color-mix(in srgb, var(--error) 10%, var(--card));
+  color: var(--error);
+}
+
+.occ-validation-warning {
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
+  color: var(--text);
+}
+
+.occ-preview-table {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.7rem;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.occ-preview-table > span {
+  margin-bottom: 0.15rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.occ-preview-table > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.occ-preview-table small {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.occ-import-submit {
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
+.occ-inline-error,
+.occ-inline-success {
+  margin: 0.65rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.occ-inline-error {
+  color: var(--error);
+}
+
+.occ-inline-success {
+  color: var(--success);
+}
+
+.occ-deadline-form {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.occ-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.85rem;
+  min-height: 44px;
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--bg);
+}
+
+.occ-toggle-row strong,
+.occ-toggle-row small {
+  display: block;
+}
+
+.occ-toggle-row strong {
+  font-size: 0.9375rem;
+}
+
+.occ-toggle-row small {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.occ-toggle-row input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+}
+
+.occ-field {
+  display: block;
+  margin-bottom: 0.65rem;
+}
+
+.occ-field input {
+  display: block;
+  min-height: 44px;
+  padding: 0 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+}
+
+.occ-field textarea {
+  min-height: 5.25rem;
+}
+
+.occ-email-placeholders {
+  margin-top: -0.25rem;
+}
+
+.occ-delivery-history {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.75rem 0;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.occ-delivery-heading,
+.occ-delivery-latest,
+.occ-delivery-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.occ-delivery-heading {
+  color: var(--text);
+  font-size: 0.9375rem;
+}
+
+.occ-delivery-heading > span,
+.occ-delivery-latest > span,
+.occ-delivery-row > span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.occ-delivery-row {
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border);
+}
+
+.occ-delivery-row .inline-flex,
+.occ-delivery-latest .inline-flex {
+  flex: 0 0 auto;
+  font-size: 0.875rem;
+}
+
+.occ-spin {
+  animation: occ-spin 1s linear infinite;
+}
+
+@keyframes occ-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .occ-spin {
+    animation: none;
+  }
+
+  .occ-track-bar > span,
+  .occ-stage-bar > span {
+    transition: none;
+  }
+}
+
+@media (max-width: 960px) {
+  .occ-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .occ-dashboard-grid,
+  .occ-lower-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .occ-page {
+    gap: 1rem;
+    padding: 1.5rem 1rem 2.25rem;
+  }
+
+  .occ-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .occ-demo-banner {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .occ-demo-banner > span:last-child {
+    width: 100%;
+    margin-left: 1.13rem;
+  }
+
+  .occ-metric-grid {
+    gap: 0.55rem;
+  }
+
+  .occ-metric-card > div {
+    padding: 0.75rem;
+  }
+
+  .occ-metric-top {
+    align-items: flex-start;
+    font-size: 0.9375rem;
+  }
+
+  .occ-metric-icon {
+    width: 1.7rem;
+    height: 1.7rem;
+  }
+
+  .occ-metric-card > div > small {
+    min-height: 1.8em;
+    font-size: 0.875rem;
+  }
+
+  .occ-panel > header {
+    padding: 1rem;
+  }
+
+  .occ-panel > div:last-child {
+    padding: 0.5rem 1rem 1rem;
+  }
+
+  .occ-team-header {
+    align-items: flex-start !important;
+    flex-direction: column;
+  }
+
+  .occ-filter-row {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .occ-search {
+    flex: 1 1 100%;
+  }
+
+  .occ-status-filter {
+    flex: 1;
+    justify-content: space-between;
+  }
+
+  .occ-result-count {
+    align-self: center;
+  }
+}

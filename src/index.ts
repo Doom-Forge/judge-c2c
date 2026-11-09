@@ -7,19 +7,25 @@ import {
 } from './matrix-cors';
 import { reconcileMatrix } from './matrix-workflow';
 export {
+  JanusMatrixRunner,
   MatrixEvaluationWorkflow,
+  MazhaiCoverMatrixRunner,
   NoyyalMatrixRunner,
+  PricingPulseMatrixRunner,
   RasoiMatrixRunner,
+  VeeraFootwearMatrixRunner,
 } from './matrix-workflow';
 import { z } from 'zod';
 import type { Env } from './env';
-import { organization, maintainOrganization } from './organization';
+import { maintainOrganization, organization } from './organization';
 export { OrganizationEvaluationWorkflow } from './organization-workflow';
 import { api } from './api';
 import { webhook } from './intake';
 import { reconcile } from './store';
+import { dispatchTeamEmail } from './team-email';
+import { dispatchTeamInvitations } from './team-invitations';
 import { observe } from './operational-telemetry';
-import { previewEnabled, previewApi, reconcilePreview } from './preview';
+import { previewApi, previewEnabled, reconcilePreview } from './preview';
 export { PublicPreviewWorkflow } from './preview-workflow';
 export { EvaluationWorkflow } from './workflow';
 export { IsolatedRunner } from './runner-container';
@@ -34,26 +40,12 @@ export default {
     const url = new URL(request.url);
     let response: Response;
     try {
-      if (env.MATRIX_MODE === 'true' && url.pathname.startsWith('/api/matrix/'))
-        response =
-          matrixPreflight(request, env) ??
-          (!isMatrixOriginAllowed(request, env)
-            ? Response.json({ error: 'ORIGIN_NOT_ALLOWED' }, { status: 403 })
-            : await matrixApi(request, env));
-      else if (env.MATRIX_MODE === 'true' && url.pathname.startsWith('/api/'))
-        response = Response.json({ error: 'NOT_FOUND' }, { status: 404 });
-      else if (
+      if (
         env.MATRIX_MODE === 'true' &&
-        (url.pathname === '/' || url.pathname === '/index.html')
+        (url.pathname.startsWith('/api/organization/') ||
+          url.pathname.startsWith('/auth/github/') ||
+          url.pathname === '/webhooks/organization')
       ) {
-        const asset = new URL(request.url);
-        asset.pathname = '/matrix.html';
-        response = await env.ASSETS.fetch(new Request(asset, request));
-      } else if (
-        url.pathname.startsWith('/api/organization/') ||
-        url.pathname.startsWith('/auth/github/') ||
-        url.pathname === '/webhooks/organization'
-      )
         response = env.ORG_DB
           ? await organization(request, env, ctx)
           : env.ORG_SERVICE
@@ -62,9 +54,63 @@ export default {
                 { error: 'ORGANIZATION_NOT_CONFIGURED' },
                 { status: 503 },
               );
-      else if (url.pathname.startsWith('/api/runner/actions/'))
+      } else if (
+        env.MATRIX_MODE === 'true' &&
+        url.pathname.startsWith('/api/matrix/')
+      ) {
+        response =
+          matrixPreflight(request, env) ??
+          (!isMatrixOriginAllowed(request, env)
+            ? Response.json(
+                { error: 'ORIGIN_NOT_ALLOWED' },
+                {
+                  status: 403,
+                },
+              )
+            : await matrixApi(request, env));
+      } else if (
+        env.MATRIX_MODE === 'true' &&
+        [
+          '/api/auth/config',
+          '/api/auth/github',
+          '/api/auth/github/callback',
+          '/api/auth/github-identity',
+          '/api/auth/me',
+          '/api/auth/logout',
+        ].includes(url.pathname)
+      ) {
+        response = env.ARENA_SERVICE
+          ? await env.ARENA_SERVICE.fetch(request)
+          : Response.json(
+              { error: 'ARENA_AUTH_UNAVAILABLE' },
+              { status: 503 },
+            );
+      } else if (
+        env.MATRIX_MODE === 'true' &&
+        url.pathname.startsWith('/api/')
+      ) {
+        response = Response.json(
+          { error: 'NOT_FOUND' },
+          {
+            status: 404,
+          },
+        );
+      } else if (
+        url.pathname.startsWith('/api/organization/') ||
+        url.pathname.startsWith('/auth/github/') ||
+        url.pathname === '/webhooks/organization'
+      ) {
+        response = env.ORG_DB
+          ? await organization(request, env, ctx)
+          : env.ORG_SERVICE
+            ? await env.ORG_SERVICE.fetch(request)
+            : Response.json(
+                { error: 'ORGANIZATION_NOT_CONFIGURED' },
+                { status: 503 },
+              );
+      } else if (url.pathname.startsWith('/api/runner/actions/')) {
         response = await actionsBroker(request, env);
-      else if (url.pathname === '/health')
+      } else if (url.pathname === '/health') {
         response = Response.json({
           status: 'ok',
           environment: env.ENVIRONMENT,
@@ -74,13 +120,26 @@ export default {
               ? 'synthetic-review'
               : 'live',
         });
-      else if (url.pathname === '/webhooks/github' && request.method === 'POST')
+      } else if (
+        url.pathname === '/webhooks/github' &&
+        request.method === 'POST'
+      ) {
         response = await webhook(request, env, ctx);
-      else if (url.pathname.startsWith('/api/'))
+      } else if (url.pathname.startsWith('/api/')) {
         response = previewEnabled(env)
           ? await previewApi(request, env, ctx)
           : await api(request, env);
-      else response = await env.ASSETS.fetch(request);
+      } else if (
+        env.MATRIX_MODE === 'true' &&
+        request.method === 'GET' &&
+        (url.pathname === '/' ||
+          url.pathname === '/index.html' ||
+          !url.pathname.includes('.'))
+      ) {
+        const asset = new URL(request.url);
+        asset.pathname = '/index.html';
+        response = await env.ASSETS.fetch(new Request(asset, request));
+      } else response = await env.ASSETS.fetch(request);
     } catch (error) {
       const matrixError =
         env.MATRIX_MODE === 'true' &&
@@ -133,8 +192,9 @@ export default {
       'permissions-policy',
       'camera=(), microphone=(), geolocation=()',
     );
-    if (url.pathname.startsWith('/api/'))
+    if (url.pathname.startsWith('/api/')) {
       response.headers.set('cache-control', 'no-store');
+    }
     console.log(
       JSON.stringify({
         event: 'http',
@@ -171,6 +231,10 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ) {
+    if (env.ORG_DB && env.TEAM_EMAIL_SENDER) {
+      ctx.waitUntil(dispatchTeamEmail(env));
+      ctx.waitUntil(dispatchTeamInvitations(env));
+    }
     if (env.MATRIX_MODE === 'true') {
       ctx.waitUntil(reconcileMatrix(env));
       return;

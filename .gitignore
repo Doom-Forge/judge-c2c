@@ -14,3 +14,8 @@ playwright-report/
 # Generated trusted VM bundle/images
 vm-runner/qemu-vm.mjs
 vm-runner/images/
+
+# Built React workspace assets
+public/assets/
+public/index.html
+frontend/.vite/

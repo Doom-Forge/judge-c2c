@@ -220,6 +220,56 @@ def run_child(directory, request):
         return None, 'participant output is not a single JSON value', started
 
 
+def run_diagnostic_child(directory, script):
+    proc = subprocess.Popen(
+        [sys.executable, str(script)], cwd=directory,
+        env={'PATH':'/usr/local/bin:/usr/bin:/bin','PYTHONDONTWRITEBYTECODE':'1'},
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        preexec_fn=limits,
+    )
+    selector = selectors.DefaultSelector()
+    for stream in (proc.stdout, proc.stderr):
+        os.set_blocking(stream.fileno(), False)
+        selector.register(stream, selectors.EVENT_READ)
+    chunks = {proc.stdout: bytearray(), proc.stderr: bytearray()}
+    deadline = time.monotonic() + WALL_SECONDS
+    failure = None
+    try:
+        while selector.get_map():
+            if time.monotonic() > deadline:
+                failure = 'diagnostic workload exceeded wall limit'
+                break
+            for key, _ in selector.select(0.05):
+                data = os.read(key.fileobj.fileno(), 4096)
+                if not data:
+                    selector.unregister(key.fileobj)
+                else:
+                    chunks[key.fileobj].extend(data)
+                    if sum(map(len, chunks.values())) > 8192:
+                        failure = 'diagnostic output exceeded 8KiB'
+                        break
+            if failure:
+                break
+        if not failure:
+            try:
+                proc.wait(timeout=max(0.001, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                failure = 'diagnostic workload exceeded wall limit'
+    finally:
+        if failure or proc.poll() is None:
+            try: os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError: pass
+        proc.wait()
+        selector.close()
+        proc.stdout.close()
+        proc.stderr.close()
+    if failure:
+        return None, failure
+    if proc.returncode != 0:
+        return None, 'diagnostic workload terminated or raised an exception'
+    return bytes(chunks[proc.stdout]), None
+
+
 def evaluate(payload):
     repo, files = validate_snapshot(payload)
     results = []
@@ -260,7 +310,88 @@ def evaluate(payload):
     return {'checks':results}
 
 
+def diagnose(code):
+    """Verify the fixed sandbox controls without evaluating participant code."""
+    if sys.platform != 'linux' or os.geteuid() != 0:
+        return {'diagnosticOnly': True, 'status': 'FAILED', 'checks': [],
+                'reason': 'Linux root controller with seccomp required'}
+    source = r'''import json, os, resource, socket
+status = open('/proc/self/status').read()
+blocked = {}
+for name, action in (
+    ('network', lambda: socket.socket()),
+    ('filesystem_write', lambda: open('/tmp/doomforge-diagnostic-write-test', 'w')),
+    ('process_creation', lambda: os.fork()),
+):
+    try:
+        value = action()
+        if name == 'network': value.close()
+        elif name == 'filesystem_write': value.close()
+        blocked[name] = False
+    except (PermissionError, OSError):
+        blocked[name] = True
+limits = {
+    'cpuSeconds': resource.getrlimit(resource.RLIMIT_CPU)[0],
+    'addressSpaceBytes': resource.getrlimit(resource.RLIMIT_AS)[0],
+    'fileSizeBytes': resource.getrlimit(resource.RLIMIT_FSIZE)[0],
+    'processes': resource.getrlimit(resource.RLIMIT_NPROC)[0],
+}
+print(json.dumps({'uid': os.getuid(), 'gid': os.getgid(),
+    'noNewPrivileges': 'NoNewPrivs:\t1' in status,
+    'seccomp': 'Seccomp:\t2' in status, 'blocked': blocked,
+    'limits': limits}, separators=(',', ':')))
+'''
+    try:
+        result = subprocess.run(
+            [sys.executable, '-c', source], cwd='/work',
+            env={'PATH': '/usr/local/bin:/usr/bin:/bin', 'PYTHONDONTWRITEBYTECODE': '1'},
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=WALL_SECONDS, check=False, preexec_fn=limits,
+        )
+        observed = json.loads(result.stdout)
+        passed = (
+            result.returncode == 0 and observed.get('uid') == 65534 and
+            observed.get('gid') == 65534 and observed.get('noNewPrivileges') is True and
+            observed.get('seccomp') is True and
+            observed.get('blocked') == {'network': True, 'filesystem_write': True, 'process_creation': True} and
+            observed.get('limits') == {'cpuSeconds': 8, 'addressSpaceBytes': 536870912,
+                'fileSizeBytes': 8388608, 'processes': 1}
+        )
+        code_hash = __import__('hashlib').sha256(code.encode('utf-8')).hexdigest()
+        if passed:
+            test_path = Path('/work/diagnostic.py')
+            test_path.write_text(code, encoding='utf-8')
+            test_path.chmod(0o444)
+            try:
+                output, error = run_diagnostic_child('/work', test_path)
+                passed = error is None and output == b'CONTAINER_DIAGNOSTIC_OK\n'
+            except (OSError, subprocess.SubprocessError):
+                passed = False
+            finally:
+                test_path.unlink(missing_ok=True)
+        return {'diagnosticOnly': True, 'status': 'READY' if passed else 'FAILED',
+                'checks': ['unprivileged uid', 'no-new-privileges', 'seccomp',
+                    'network denied', 'filesystem writes denied', 'process creation denied',
+                    'CPU, memory, file and process limits', 'exact-commit test code executed'],
+                'codeSha256': code_hash,
+                'reason': None if passed else 'sandbox or test-code verification failed'}
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+        return {'diagnosticOnly': True, 'status': 'FAILED', 'checks': [],
+                'reason': 'sandbox control verification failed'}
+
+
 def main():
+    if sys.argv[1:] == ['--diagnostic']:
+        try:
+            raw = sys.stdin.buffer.read(8193)
+            request = json.loads(raw)
+            if len(raw) > 8192 or not isinstance(request, dict) or set(request) != {'code'} or not isinstance(request['code'], str) or len(request['code'].encode('utf-8')) > 4096:
+                raise ValueError('invalid diagnostic code')
+            result = diagnose(request['code'])
+        except (ValueError, TypeError, RecursionError, UnicodeError):
+            result = {'diagnosticOnly': True, 'status': 'FAILED', 'checks': [], 'codeSha256': None, 'reason': 'invalid diagnostic code'}
+        print(json.dumps(result, allow_nan=False, separators=(',', ':')))
+        return
     try:
         raw = sys.stdin.buffer.read(MAX_INPUT+1)
         if len(raw)>MAX_INPUT:

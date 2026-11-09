@@ -1,5 +1,47 @@
 # Operations and readiness
 
+## Live dashboard routing (2026-11-08)
+
+`https://doombot.180dcvitc.org` is the canonical dashboard on Worker
+`doomforge-arena`. Arena continues to own OAuth, teams, judge assignments,
+webhooks, queues and its D1 database. Its server-side `MATRIX_BACKEND` binding
+forwards `/api/organization/*`, `/auth/github/*` and `/webhooks/organization`
+to `doomforge-matrix` while preserving the browser request. The browser receives
+no Matrix bearer token. The Matrix Worker remains the service backend and serves
+its direct worker hostname for operations; do not move the custom domain onto it.
+The existing DoomBot App webhook still targets the Matrix Worker, and that exact
+legacy worker origin remains allowlisted while webhook configuration stays put.
+
+Build and deploy the Arena gateway from the `Judgeing-platform` checkout with
+`npm run deploy` (the predeploy step builds assets into Doomforge's `public/`).
+Deploy the backend from the Doomforge checkout with
+`npx wrangler deploy --config wrangler.matrix.jsonc`. The backend config binds
+the production organization/evaluation databases, private artifact bucket,
+Containers and Arena service. Remote D1 backups and migrations must be completed
+before deploying schema-dependent backend changes.
+
+The two existing matrix profiles are Noyyal Treasury and Rasoi Offer Roulette.
+Four additional Container classes exist for Mazhai Cover, PricingPulse, Veera
+Footwear and Janus. Their official evaluation profiles remain unconfigured until
+approved challenge specifications are supplied. The organizer-only
+`/api/organization/matrix-container-check` is an infrastructure diagnostic: it
+reads the exact temporary `src/diagnostic.py` commit from each fixed public repo,
+runs it under the pinned container sandbox, and returns runtime readiness only.
+It cannot generate competition marks or establish official scoring readiness.
+An organizer POSTs the four full 40-character commit IDs as JSON, keyed by
+`mazhai-cover`, `pricingpulse`, `veera-footwear` and `janus`. The source must be
+at `src/diagnostic.py`, at most 4 KiB, and print the fixed
+`CONTAINER_DIAGNOSTIC_OK` marker after its sandbox assertions. Each check uses a
+fresh, single-use Container with internet disabled and is destroyed before the
+response. The endpoint permits two attempts per 30 minutes so an isolated
+runtime startup failure can be retried without opening an unbounded path.
+`RUNNER_ENABLED=false` is a legacy runner setting and does not disable Matrix
+Containers; current Matrix operation is selected by `MATRIX_MODE=true`.
+
+Historical deployment notes below describe earlier versions and may mention
+retired preview workers, runner backends or setup blockers. Follow the live
+routing and command above for the current production dashboard.
+
 The foundation has one high-entropy organizer bearer credential. Add individual verified
 identities, scoped roles and audit actors before a multi-organizer event. Rotate secrets
 through Wrangler. Protect GitHub branches and deployment environments independently.

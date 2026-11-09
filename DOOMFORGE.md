@@ -1,16 +1,24 @@
 # Doomforge — 180DC Cloudflare container judge
 
-Dashboard: <https://doomforge-matrix.technical-vitc.workers.dev/>.
+Dashboard: <https://doombot.180dcvitc.org/>.
 Organization: <https://github.com/180DC-VIT-CHENNAI/>.
 Cloudflare account: `Technical.vitc@180dc.org's Account`.
 
-The current pilot replaces AI judging with deterministic tests in two Cloudflare
-Container applications, one for `noyyal-treasury` and one for
-`rasoi-offer-roulette`. PR webhooks freeze the exact head, baseline, matrix digest
-and image identity. The dashboard displays scalability, security and usefulness
-statuses, 0–100 category scores, an equal-weight overall score, individual checks
-and baseline comparisons. Incomplete evidence remains UNVERIFIED with no final
-overall score. Historical and superseded attempts are retained.
+The production dashboard is served by the `doomforge-arena` Worker. It retains
+Arena's GitHub OAuth, team, judge, queue, webhook and D1 APIs. The Worker forwards
+organization and GitHub App lifecycle paths through its `MATRIX_BACKEND` service
+binding to `doomforge-matrix`; browser requests do not receive a backend token.
+Arena assets are built from `Judgeing-platform` into this repository's `public/`.
+
+The matrix backend runs the two implemented deterministic profiles for
+`noyyal-treasury` and `rasoi-offer-roulette`. PR runs freeze the exact head,
+baseline, matrix digest and image. Historical and superseded attempts are
+retained. The four additional competition containers (`mazhai-cover`,
+`pricingpulse`, `veera-footwear` and `janus`) have runtime classes but still need
+approved challenge specifications and source repositories before official
+judging can produce marks. The authenticated organizer diagnostic checks those
+containers with temporary test code and explicitly produces no competition
+marks.
 
 Scores are shown only on the authenticated dashboard. The GitHub App, **DoomBot
 180DC**, posts a single avatar-backed “DoomBot is evaluating your PR.” notice per
@@ -22,32 +30,28 @@ bindings or external runner credentials in this deployment. GitHub Actions
 workflows were disabled and removed at the owner's request on 2026-11-04; do not
 re-enable them. Local Docker is authorized only for image builds and validation.
 
-## Operate
+## Deploy
 
 ```sh
-npm ci
-npm run check
-npm run test:browser
 npx wrangler deploy --config wrangler.matrix.jsonc
 ```
 
-The committed configuration pins the trusted image in Cloudflare's registry.
+Deploy the Arena dashboard and gateway from the `Judgeing-platform` checkout with
+`npm run deploy`; its `predeploy` step builds the assets into this repository's
+`public/` directory. Deploy the Matrix backend from this repository with the
+command above. The committed Matrix configuration binds the private R2 bucket,
+organization/evaluation D1 databases, Containers, and the Arena service.
 Read [the container runbook](docs/container-matrix.md) before changing an image,
-matrix or baseline. Always validate a new image with the synthetic passing,
-failing and isolation canaries on Cloudflare before enabling real submissions.
-These narrow pilot checks do not establish full challenge scoring or event-scale
-capacity. Their exact scope is documented in `matrix-runner/README.md`.
+matrix or baseline. Validate new image changes with the isolated sandbox
+diagnostic and the existing deterministic profile checks. These checks do not
+establish scoring readiness for the four unconfigured challenge profiles or
+event-scale capacity; see `matrix-runner/README.md`.
 
 The main organizer credential is kept privately in
 `.wrangler/workspaces/technical-matrix/secrets.json` as `ADMIN_TOKEN`. Credentials,
 SQL backups, deployment receipts, canary results and screenshots are ignored by
 Git and must remain private. The existing organization-owned GitHub App connection
 and selected repositories were migrated with the organization database.
-
-An isolated synthetic review is available at
-<https://doomforge-matrix-review.technical-vitc.workers.dev/> with public demo
-credential `preview`. It has no live databases, secrets or execution bindings.
-Its generated results are not participant evaluations.
 
 ## Retained historical deployment
 
