@@ -446,16 +446,23 @@ export async function participantConsole(
 			const ranking = snapshot.ranking?.filter(
 				(result) => result.teamId === session.team_id,
 			) ?? [];
-			return json({
+			const response: {
+				published: true;
+				results: typeof results;
+				ranking: typeof ranking;
+				sharedStageScores?: Awaited<ReturnType<typeof participantSharedScores>>;
+			} = {
 				published: true,
 				results,
 				ranking,
-				sharedStageScores: await participantSharedScores(
-					db,
-					session.team_id,
-					publication.snapshotId,
-				),
-			});
+			};
+			const sharedStageScores = await participantSharedScores(
+				db,
+				session.team_id,
+				publication.snapshotId,
+			);
+			if (sharedStageScores.length) response.sharedStageScores = sharedStageScores;
+			return json(response);
 		} catch {
 			return json({ error: "RESULTS_UNAVAILABLE" }, 503);
 		}
