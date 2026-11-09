@@ -29,19 +29,21 @@ type RepositoryKey =
 	| "pricingpulse"
 	| "veera-footwear"
 	| "janus";
-const repoKey = (name: string): RepoKey => {
+const repoKey = (name: string): RepositoryKey => {
 	const key = name.split("/")[1];
-	if (key !== "noyyal-treasury" && key !== "rasoi-offer-roulette") {
+	if (![
+		"noyyal-treasury", "rasoi-offer-roulette", "mazhai-cover", "pricingpulse", "veera-footwear", "janus",
+	].includes(key ?? "")) {
 		throw new Error("MATRIX_UNKNOWN_REPOSITORY");
 	}
-	return key;
+	return key as RepositoryKey;
 };
 const dbFor = (env: Env) => env.ORG_DB ?? env.DB;
 async function current(env: Env, id: string) {
 	const db = dbFor(env);
 	const run = await db
 		.prepare(
-			"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id WHERE r.id=? AND s.closed=0 AND g.accessible=1 AND r.state IN ('QUEUED','RUNNING')",
+		"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri WHERE r.id=? AND r.full_name IN ('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus') AND s.closed=0 AND g.accessible=1 AND r.state IN ('QUEUED','RUNNING')",
 		)
 		.bind(id)
 		.first<MatrixRun>();
@@ -424,7 +426,8 @@ export class MatrixEvaluationWorkflow extends WorkflowEntrypoint<
 			await step.do("verify-inputs", async () => {
 				const run = await current(this.env, id),
 					key = repoKey(run.full_name),
-					matrix = matrices[key];
+					matrix = matrices[key as RepoKey];
+				if (!matrix) throw new Error("MATRIX_PROFILE_NOT_APPROVED");
 				if (
 					run.matrix_version !== matrix.version ||
 					run.matrix_digest !== (await digest(canonical(matrix)))
@@ -497,12 +500,14 @@ export class MatrixEvaluationWorkflow extends WorkflowEntrypoint<
 								timeout: "5 minutes",
 							},
 							async () => {
-								const run = await current(this.env, id),
-									key = repoKey(run.full_name),
+					const run = await current(this.env, id),
+						key = repoKey(run.full_name),
+						matrix = matrices[key as RepoKey],
 									github = await clientFor(this.env, run),
 									commit = kind === "baseline"
 										? run.baseline_sha
 										: run.head_sha;
+					if (!matrix) throw new Error("MATRIX_PROFILE_NOT_APPROVED");
 								const identity = {
 									repository: run.full_name,
 									baselineSha: run.baseline_sha,
@@ -513,7 +518,7 @@ export class MatrixEvaluationWorkflow extends WorkflowEntrypoint<
 									const cached = await readBaseline(
 										db,
 										identity,
-										matrices[key].checks,
+							matrix.checks,
 									);
 									if (cached) return cached;
 								}
@@ -547,7 +552,7 @@ export class MatrixEvaluationWorkflow extends WorkflowEntrypoint<
 									await retainBaseline(
 										db,
 										identity,
-										matrices[key].checks,
+							matrix.checks,
 										report,
 									);
 								}
@@ -616,7 +621,9 @@ export class MatrixEvaluationWorkflow extends WorkflowEntrypoint<
 			};
 			const baseline = await execute("baseline");
 			await step.do("retain-baseline", async () => {
-				const run = await current(this.env, id);
+				const run = await current(this.env, id),
+					matrix = matrices[repoKey(run.full_name) as RepoKey];
+				if (!matrix) throw new Error("MATRIX_PROFILE_NOT_APPROVED");
 				await db
 					.prepare(
 						"UPDATE matrix_runs SET report=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND state='RUNNING'",
@@ -624,7 +631,7 @@ export class MatrixEvaluationWorkflow extends WorkflowEntrypoint<
 					.bind(
 						canonical({
 							...scoreMatrix(
-								matrices[repoKey(run.full_name)].checks,
+							matrix.checks,
 								[],
 							),
 							baseline,
@@ -670,7 +677,7 @@ export async function reconcileMatrix(env: Env) {
 	const db = dbFor(env);
 	const queued = await db
 		.prepare(
-			"SELECT r.id FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id WHERE r.state='QUEUED' AND s.closed=0 LIMIT 20",
+			"SELECT r.id FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri WHERE r.full_name IN ('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus') AND r.state='QUEUED' AND s.closed=0 LIMIT 20",
 		)
 		.all<{ id: string }>();
 	for (const row of queued.results) {
@@ -679,7 +686,7 @@ export async function reconcileMatrix(env: Env) {
 	if (env.DEFAULT_PR_REVIEWER) {
 		const reviews = await db
 			.prepare(
-				"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id LEFT JOIN matrix_default_reviewers d ON d.repository_id=r.repository_id AND d.pr_number=r.pr_number AND d.reviewer=? WHERE s.closed=0 AND g.accessible=1 AND (d.status IS NULL OR d.status='PENDING') ORDER BY COALESCE(d.updated_at,'1970-01-01') ASC,r.created_at ASC LIMIT 100",
+				"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri LEFT JOIN matrix_default_reviewers d ON d.repository_id=r.repository_id AND d.pr_number=r.pr_number AND d.reviewer=? WHERE r.full_name IN ('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus') AND s.closed=0 AND g.accessible=1 AND (d.status IS NULL OR d.status='PENDING') ORDER BY COALESCE(d.updated_at,'1970-01-01') ASC,r.created_at ASC LIMIT 100",
 			)
 			.bind(env.DEFAULT_PR_REVIEWER)
 			.all<MatrixRun>();
@@ -692,7 +699,7 @@ export async function reconcileMatrix(env: Env) {
 	const noticeHash = await digest(doombotNoticeBody(origin));
 	const pending = await db
 		.prepare(
-			"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id LEFT JOIN matrix_doombot_notices n ON n.repository_id=r.repository_id AND n.pr_number=r.pr_number WHERE s.closed=0 AND g.accessible=1 AND r.state IN ('RUNNING','COMPLETED','FAILED') AND (n.comment_id IS NULL OR n.body_hash IS NULL OR n.body_hash<>?) ORDER BY r.created_at DESC LIMIT 100",
+			"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri LEFT JOIN matrix_doombot_notices n ON n.repository_id=r.repository_id AND n.pr_number=r.pr_number WHERE r.full_name IN ('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus') AND s.closed=0 AND g.accessible=1 AND r.state IN ('RUNNING','COMPLETED','FAILED') AND (n.comment_id IS NULL OR n.body_hash IS NULL OR n.body_hash<>?) ORDER BY r.created_at DESC LIMIT 100",
 		)
 		.bind(noticeHash)
 		.all<MatrixRun>();

@@ -72,7 +72,7 @@ beforeAll(async () => {
   organizerCookie = await login(admin);
   await db
     .prepare(
-      "INSERT INTO teams(id,name,status) VALUES('team-a','Team A','ACTIVE'),('team-b','Team B','ACTIVE')",
+      "INSERT INTO teams(id,name,hackathon_id,status,lead_email) VALUES('team-a','Team A','initial','ACTIVE','lead-a@example.test'),('team-b','Team B','initial','ACTIVE','lead-b@example.test')",
     )
     .run();
   await db
@@ -80,6 +80,24 @@ beforeAll(async () => {
       "INSERT INTO github_repositories(id,full_name,private,default_branch,accessible) VALUES(1,'fixture/repo',1,'main',1)",
     )
     .run();
+  await db.prepare(
+    "INSERT INTO github_repositories(id,full_name,private,default_branch,accessible) VALUES(2,'180DC-VIT-CHENNAI/mazhai-cover',0,'main',1)",
+  ).run();
+  for (const [teamId, memberId, rosterId, email, githubId, repoId] of [
+    ['team-a', 'member-a', 'roster-a', 'lead-a@example.test', 9001, 2],
+    ['team-b', 'member-b', 'roster-b', 'lead-b@example.test', 9002, 2],
+  ] as const) {
+    await db.prepare(
+      "INSERT INTO team_members(id,team_id,hackathon_id,github_id,github_login,display_name,email) VALUES(?,?,'initial',?,?,?,?)",
+    ).bind(memberId, teamId, githubId, 'participant-' + teamId, 'Team Lead', email).run();
+    await db.prepare(
+      "INSERT INTO team_roster_members(id,team_id,hackathon_id,display_name,email,linked_team_member_id) VALUES(?,?,'initial','Team Lead',?,?)",
+    ).bind(rosterId, teamId, email, memberId).run();
+    await db.prepare(
+      "INSERT INTO team_repositories(team_id,repository_id,actor) VALUES(?,?,'organizer:test')",
+    ).bind(teamId, repoId).run();
+    await db.prepare("UPDATE teams SET track_finalized=1 WHERE id=?").bind(teamId).run();
+  }
   await db
     .prepare(
       "INSERT INTO repositories(id,full_name,installation_id,active_contract_hash) VALUES(1,'fixture/repo',1,?)",
@@ -237,6 +255,9 @@ it('isolates participant lists and criterion outcomes, denies cross-team and sen
     ).status,
   ).toBe(400);
   const participant = await issue('Named participant', 'participant', 'team-a');
+  await env.ORG_DB!.prepare(
+    "UPDATE console_identities SET team_member_id='member-a',team_roster_member_id='roster-a',github_verified_at='2026-11-09' WHERE id=? AND role='participant' AND team_id='team-a'",
+  ).bind(participant.id).run();
   const participantCookie = await login(participant.credential);
   const status = (await (
     await call('status', participantCookie)

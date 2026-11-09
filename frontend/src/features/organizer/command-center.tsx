@@ -913,6 +913,7 @@ export function OrganizerCommandCenter({
 												Judge assignment
 											</th>
 											<th scope="col">Status</th>
+										<th scope="col">Admin inspection</th>
 										</tr>
 									</thead>
 									<tbody>
@@ -1031,6 +1032,9 @@ export function OrganizerCommandCenter({
 															status={team.status}
 														/>
 													</td>
+												<td>
+													<Link className="inline-flex min-h-11 items-center text-sm font-semibold text-[var(--info)] underline-offset-2 hover:underline" to={`/inspect/team/${encodeURIComponent(team.id)}`}>Inspect dashboards</Link>
+												</td>
 												</tr>
 											);
 										})}

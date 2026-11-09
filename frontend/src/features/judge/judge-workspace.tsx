@@ -111,7 +111,21 @@ type Detail = {
 		pullRequestDeadline: string | null;
 	} | null;
 };
-type Props = { history?: boolean; initialTeamId?: string };
+type FinalScoreContext = {
+	team: { id: string; name: string };
+	manualReviews: {
+		analysis: { reviewCount: number; average: number | null };
+		engineering: { reviewCount: number; average: number | null };
+	};
+	machineEvidence: {
+		status: "UNVERIFIED";
+		marks: null;
+		pullRequests: Array<{ repositoryId: number; repository: string; prNumber: number; headSha: string; authorLogin: string; updatedAt: string; closed: boolean; evaluationStatus: "UNVERIFIED"; marks: null; categories: Array<{ category: string; status: "UNVERIFIED"; score: null }> }>;
+	};
+	finalScore: { score: number; judgeIdentityId: string; reason: string; createdAt: string } | null;
+	canFinalize: boolean;
+};
+type Props = { history?: boolean; initialTeamId?: string; reviewerIdentityId?: string; readOnly?: boolean };
 type Stage = "ANALYSIS" | "ENGINEERING";
 const API = "/api/organization/round-two";
 const emptyFeedback: ReviewFeedback = {
@@ -162,6 +176,8 @@ const humanBytes = (bytes: number) =>
 export function JudgeWorkspace({
 	history = true,
 	initialTeamId = "",
+	reviewerIdentityId = "",
+	readOnly = false,
 }: Props) {
 	const [teams, setTeams] = useState<Team[]>([]);
 	const [deadlines, setDeadlines] = useState<Detail["deadlines"]>(null);
@@ -179,6 +195,11 @@ export function JudgeWorkspace({
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [sharingReviewId, setSharingReviewId] = useState<string | null>(null);
+	const [finalScoreContext, setFinalScoreContext] = useState<FinalScoreContext | null>(null);
+	const [finalScoreInput, setFinalScoreInput] = useState("");
+	const [finalScoreReason, setFinalScoreReason] = useState("");
+	const [finalScoreConfirmed, setFinalScoreConfirmed] = useState(false);
+	const [finalizingScore, setFinalizingScore] = useState(false);
 	const refreshRequest = useRef(0);
 
 	const refresh = useCallback(async () => {
@@ -201,6 +222,7 @@ export function JudgeWorkspace({
 			if (!selectedId) {
 				setDetail(null);
 				setReview(null);
+				setFinalScoreContext(null);
 				setLoadedScope("");
 				return;
 			}
@@ -209,12 +231,18 @@ export function JudgeWorkspace({
 				request<ReviewData>(
 					`/reviews?teamId=${
 						encodeURIComponent(selectedId)
-					}&stage=${stage}`,
+					}&stage=${stage}${reviewerIdentityId ? `&judgeIdentityId=${encodeURIComponent(reviewerIdentityId)}` : ""}`,
 				),
 			]);
 			if (requestId !== refreshRequest.current) return;
 			setDetail(nextDetail);
 			setReview(nextReview);
+			const finalScore = readOnly ? null : await request<FinalScoreContext>(`/results/final-score?teamId=${encodeURIComponent(selectedId)}`).catch(() => null);
+			if (requestId !== refreshRequest.current) return;
+			setFinalScoreContext(finalScore);
+			setFinalScoreInput(finalScore?.finalScore ? String(finalScore.finalScore.score) : "");
+			setFinalScoreReason("");
+			setFinalScoreConfirmed(false);
 			setLoadedScope(`${selectedId}:${stage}`);
 		} catch (cause) {
 			if (requestId === refreshRequest.current) {
@@ -223,7 +251,7 @@ export function JudgeWorkspace({
 		} finally {
 			if (requestId === refreshRequest.current) setLoading(false);
 		}
-	}, [stage, teamId]);
+	}, [readOnly, reviewerIdentityId, stage, teamId]);
 	useEffect(() => {
 		void refresh();
 	}, [refresh]);
@@ -318,7 +346,7 @@ export function JudgeWorkspace({
 		: parseReviewScore(score);
 
 	async function act(action: "SAVE_DRAFT" | "SUBMIT" | "REVISE") {
-		if (!reviewReady || loading || saving || error) return;
+		if (readOnly || !reviewReady || loading || saving || error) return;
 		if (stage === "ANALYSIS" && score.trim() === "") {
 			setError("Enter an Analysis score from 0 to 100.");
 			return;
@@ -438,7 +466,7 @@ export function JudgeWorkspace({
 	}
 
 	async function updateScoreSharing(item: ReviewRecord, shared: boolean) {
-		if (!item.id || !teamId) return;
+		if (readOnly || !item.id || !teamId) return;
 		setSharingReviewId(item.id);
 		setError(null);
 		setNotice(null);
@@ -455,6 +483,34 @@ export function JudgeWorkspace({
 			setError(errorText(cause));
 		} finally {
 			setSharingReviewId(null);
+		}
+	}
+	async function finalizeTeamScore() {
+		if (!teamId || !finalScoreContext?.canFinalize || finalizingScore) return;
+		const score = Number(finalScoreInput);
+		if (!Number.isFinite(score) || score < 0 || score > 100) {
+			setError("Enter an official team score from 0 to 100.");
+			return;
+		}
+		if (finalScoreReason.trim().length < 10) {
+			setError("Add a reason of at least 10 characters for the official score.");
+			return;
+		}
+		if (!finalScoreConfirmed) {
+			setError("Confirm that this is the team's official final score.");
+			return;
+		}
+		setFinalizingScore(true);
+		setError(null);
+		setNotice(null);
+		try {
+			await request("/results/final-score", { method: "POST", body: JSON.stringify({ teamId, score, reason: finalScoreReason.trim() }) });
+			setNotice("Official team score finalized and recorded.");
+			await refresh();
+		} catch (cause) {
+			setError(errorText(cause));
+		} finally {
+			setFinalizingScore(false);
 		}
 	}
 	async function downloadDocument(document: Document) {
@@ -488,9 +544,9 @@ export function JudgeWorkspace({
 			<header className="jw-header">
 				<div>
 					<p className="jw-eyebrow">DOOMFORGE / ROUND TWO</p>
-					<h1>Judge workspace</h1>
+					<h1>{readOnly ? "Judge dashboard inspection" : "Judge workspace"}</h1>
 					<p className="jw-subtitle">
-						Review assigned teams against submitted evidence.
+						{readOnly ? "Read-only view of this judge’s submitted team reviews and evidence." : "Review assigned teams against submitted evidence."}
 					</p>
 				</div>
 				<div className="jw-header-actions">
@@ -552,15 +608,9 @@ export function JudgeWorkspace({
 								))}
 							</select>
 						</label>
-						<div className="jw-weight-summary">
-							<span>
-								<strong>10%</strong> Analysis
-							</span>
-							<i />
-							<span>
-								<strong>90%</strong> Engineering
-							</span>
-						</div>
+						{readOnly ? <span className="jw-status">Organizer inspection · read only</span> : <div className="jw-weight-summary">
+							<span><strong>10%</strong> Analysis</span><i /><span><strong>90%</strong> Engineering</span>
+						</div>}
 					</div>
 					{detail && reviewReady && (
 						<>
@@ -936,13 +986,13 @@ export function JudgeWorkspace({
 									<section className="jw-panel jw-review-panel">
 										<div className="jw-panel-heading">
 											<div>
-												<p className="jw-eyebrow">
-													{stage === "ANALYSIS"
+													<p className="jw-eyebrow">
+														{readOnly ? "READ ONLY · " : ""}{stage === "ANALYSIS"
 														? "ANALYSIS REVIEW"
 														: "TRACK RUBRIC"}
 												</p>
 												<h3>
-													{stage === "ANALYSIS"
+													{readOnly ? `${stage === "ANALYSIS" ? "Analysis" : "Engineering"} review record` : stage === "ANALYSIS"
 														? "Problem & impact"
 														: "Engineering quality"}
 												</h3>
@@ -953,6 +1003,8 @@ export function JudgeWorkspace({
 														review?.submissions[0]
 															?.revision ?? 1
 													}`
+													: readOnly
+													? "Inspection view"
 													: hasSavedDraft
 													? "Draft in progress"
 													: "New review"}
@@ -998,7 +1050,7 @@ export function JudgeWorkspace({
 																type="number"
 																min="0"
 																max="100"
-																disabled={saving}
+																disabled={readOnly || saving}
 																value={score}
 																onChange={(
 																	event,
@@ -1020,7 +1072,7 @@ export function JudgeWorkspace({
 														>
 															<span>{label}</span>
 															<textarea
-																disabled={saving}
+																disabled={readOnly || saving}
 																value={feedback[
 																	key
 																] ?? ""}
@@ -1157,7 +1209,7 @@ export function JudgeWorkspace({
 																					type="number"
 																					min="0"
 																					max="100"
-																					disabled={saving}
+																					disabled={readOnly || saving}
 																					value={value
 																						?.score ??
 																						""}
@@ -1201,7 +1253,7 @@ export function JudgeWorkspace({
 																					type="range"
 																					min="0"
 																					max="100"
-																					disabled={saving ||
+																					disabled={readOnly || saving ||
 																						value
 																								?.score ==
 																							null}
@@ -1237,7 +1289,7 @@ export function JudgeWorkspace({
 																			</div>
 																			<textarea
 																				aria-label={`${criterion.label} feedback`}
-																				disabled={saving}
+																				disabled={readOnly || saving}
 																				rows={2}
 																				placeholder={`Evidence and feedback for ${criterion.label.toLowerCase()}…`}
 																				value={value
@@ -1290,7 +1342,7 @@ export function JudgeWorkspace({
 														</span>
 														<textarea
 															rows={3}
-															disabled={saving}
+															disabled={readOnly || saving}
 															value={feedback
 																.overall ?? ""}
 															onChange={(event) =>
@@ -1319,7 +1371,7 @@ export function JudgeWorkspace({
 												</span>
 												<textarea
 													rows={2}
-													disabled={saving}
+													disabled={readOnly || saving}
 													value={reason}
 													onChange={(event) =>
 														setReason(
@@ -1329,11 +1381,11 @@ export function JudgeWorkspace({
 												/>
 											</label>
 										)}
-										<div className="jw-review-actions">
+										{!readOnly && <div className="jw-review-actions">
 											<button
 												type="button"
 												className="jw-button jw-button-secondary"
-												disabled={saving || loading ||
+												disabled={readOnly || saving || loading ||
 													!reviewReady ||
 													revisionMode}
 												onClick={() =>
@@ -1344,7 +1396,7 @@ export function JudgeWorkspace({
 											<button
 												type="button"
 												className="jw-button jw-button-primary"
-												disabled={saving ||
+												disabled={readOnly || saving ||
 													loading ||
 													!reviewReady ||
 													rubricMismatch ||
@@ -1364,12 +1416,12 @@ export function JudgeWorkspace({
 													? "Submit revision"
 													: "Submit review"}
 											</button>
-										</div>
-										<p className="jw-submit-note">
+										</div>}
+										{!readOnly && <p className="jw-submit-note">
 											{revisionMode
 												? "Submitted reviews are immutable; revisions create a new preserved history entry."
 												: "Submitting requires a saved draft. Save your review first, then submit it."}
-										</p>
+										</p>}
 									</section>
 									{history && (
 										<section className="jw-panel jw-history-panel">
@@ -1418,7 +1470,7 @@ export function JudgeWorkspace({
 														</summary>
 														<pre>{JSON.stringify(item.payload, null, 2)}</pre>
 													</details>
-													{item.id && (index === 0 || item.scoreShared || item.includedInPublishedSnapshot) && (
+													{item.id && (readOnly || index === 0 || item.scoreShared || item.includedInPublishedSnapshot) && (
 														<div className="jw-score-sharing">
 															<div>
 																<strong>{item.scoreShared ? "Stage score selected to share" : "Stage score is private"}</strong>
@@ -1426,7 +1478,7 @@ export function JudgeWorkspace({
 																	? "This exact review is part of the current published snapshot."
 																	: "Sharing appears to participants only after an organizer publishes a snapshot containing this exact review."}</p>
 															</div>
-															<button
+													{!readOnly && <button
 															className="jw-button jw-button-secondary"
 															disabled={sharingReviewId !== null}
 															onClick={() => void updateScoreSharing(item, !item.scoreShared)}
@@ -1436,7 +1488,7 @@ export function JudgeWorkspace({
 															{sharingReviewId === item.id
 																? "Saving…"
 																: item.scoreShared ? "Stop sharing score" : "Share stage score"}
-														</button>
+													</button>}
 														</div>
 													)}
 												</div>
@@ -1472,6 +1524,24 @@ export function JudgeWorkspace({
 											)}
 										</section>
 									)}
+								{!readOnly && <section className="jw-panel jw-final-score" aria-labelledby="jw-final-score-title">
+									<header><div><p className="jw-eyebrow">TEAM DECISION</p><h3 id="jw-final-score-title">Official team score</h3><p className="jw-muted">Enter the final mark after reviewing the Cloudflare evidence and submitted judge reviews. No score is calculated or finalized automatically.</p></div></header>
+									{finalScoreContext ? <>
+										<div className="jw-final-score-evidence">
+											<div><span>Manual Analysis</span><strong>{finalScoreContext.manualReviews.analysis.average === null ? "No submitted marks" : `${finalScoreContext.manualReviews.analysis.average.toFixed(1)} / 100`}</strong><small>{finalScoreContext.manualReviews.analysis.reviewCount} submitted review{finalScoreContext.manualReviews.analysis.reviewCount === 1 ? "" : "s"}</small></div>
+											<div><span>Manual Engineering</span><strong>{finalScoreContext.manualReviews.engineering.average === null ? "No submitted marks" : `${finalScoreContext.manualReviews.engineering.average.toFixed(1)} / 100`}</strong><small>{finalScoreContext.manualReviews.engineering.reviewCount} submitted review{finalScoreContext.manualReviews.engineering.reviewCount === 1 ? "" : "s"}</small></div>
+											<div><span>Cloudflare evaluation</span><strong>{finalScoreContext.machineEvidence.status}</strong><small>Automated marks: unavailable</small></div>
+										</div>
+										<section className="jw-final-score-prs" aria-label="Cloudflare pull request evidence"><h4>Pull request evidence</h4>{finalScoreContext.machineEvidence.pullRequests.length ? <ul>{finalScoreContext.machineEvidence.pullRequests.map((pr) => <li key={`${pr.repositoryId}-${pr.prNumber}`}><span><strong>{pr.repository} #{pr.prNumber}</strong><small>by @{pr.authorLogin} · {pr.headSha.slice(0, 12)}{pr.closed ? " · closed" : ""}</small></span><span className="jw-status">{pr.evaluationStatus}</span><small>No automated marks are available.</small></li>)}</ul> : <p className="jw-muted">No team pull requests have been recorded as evaluation evidence yet.</p>}</section>
+										{finalScoreContext.finalScore ? <div className="jw-final-score-result" role="status"><span>Finalized official score</span><strong>{finalScoreContext.finalScore.score.toFixed(1)} / 100</strong><p>{finalScoreContext.finalScore.reason}</p><small>Recorded {dateText(finalScoreContext.finalScore.createdAt)}. Official scores are immutable; contact the organizer if a correction is required.</small></div> : <div className="jw-final-score-form">
+											<label>Official final score <span>(0–100)</span><input aria-label="Official final score" type="number" min="0" max="100" step="0.1" value={finalScoreInput} onChange={(event) => setFinalScoreInput(event.currentTarget.value)} disabled={!finalScoreContext.canFinalize || finalizingScore || saving} /></label>
+											<label>Reason for this score<textarea aria-label="Reason for official final score" value={finalScoreReason} onChange={(event) => setFinalScoreReason(event.currentTarget.value)} minLength={10} maxLength={1000} rows={3} disabled={!finalScoreContext.canFinalize || finalizingScore || saving} /></label>
+											<label className="jw-final-score-confirm"><input type="checkbox" checked={finalScoreConfirmed} onChange={(event) => setFinalScoreConfirmed(event.currentTarget.checked)} disabled={!finalScoreContext.canFinalize || finalizingScore || saving} /> I confirm this is the team's official final mark. This decision cannot be edited after submission.</label>
+											{!finalScoreContext.canFinalize && <p className="jw-muted">At least one submitted Engineering review is required before finalization.</p>}
+											<button type="button" className="jw-button jw-button-primary" disabled={!finalScoreContext.canFinalize || finalizingScore || saving || !finalScoreConfirmed || !finalScoreInput || finalScoreReason.trim().length < 10} onClick={() => void finalizeTeamScore()}>{finalizingScore ? "Recording final score…" : "Finalize official team score"}</button>
+										</div>}
+									</> : <p className="jw-muted" role="status">Final score context is unavailable. Refresh the assigned team before finalizing.</p>}
+								</section>}
 								</div>
 							</div>
 						</>

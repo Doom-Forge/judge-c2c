@@ -265,6 +265,7 @@ export async function roundTwoReview(
 			submissions,
 			documents,
 			matrixSubmissions,
+			unverifiedPullRequests,
 		] = await Promise.all([
 			db
 				.prepare(
@@ -310,6 +311,23 @@ export async function roundTwoReview(
 					failure_code: string | null;
 					report: string | null;
 				}>(),
+			db
+				.prepare(
+					"SELECT s.repository_id,r.full_name,s.pr_number,s.head_sha,s.github_updated_at,s.closed,s.author_id,s.author_login,s.mapping_status,s.check_status FROM unverified_pr_submissions s JOIN github_repositories r ON r.id=s.repository_id AND r.accessible=1 JOIN team_repositories tr ON tr.team_id=s.team_id AND tr.repository_id=s.repository_id AND tr.active=1 WHERE s.team_id=? AND s.mapping_status='MAPPED' ORDER BY s.github_updated_at DESC LIMIT 100",
+				)
+				.bind(teamPath[1])
+				.all<{
+					repository_id: number;
+					full_name: string;
+					pr_number: number;
+					head_sha: string;
+					github_updated_at: string;
+					closed: number;
+					author_id: number;
+					author_login: string;
+					mapping_status: string;
+					check_status: string;
+				}>(),
 		]);
 		const deadlines = await db
 			.prepare(
@@ -326,6 +344,20 @@ export async function roundTwoReview(
 				report: submission.report
 					? JSON.parse(submission.report)
 					: null,
+			})),
+			unverifiedPullRequests: unverifiedPullRequests.results.map((submission) => ({
+				...submission,
+				htmlUrl: `https://github.com/${submission.full_name}/pull/${submission.pr_number}`,
+				evaluationStatus: "UNVERIFIED",
+				categories: {
+					functionalCorrectness: "UNVERIFIED",
+					security: "UNVERIFIED",
+					performanceAndScalability: "UNVERIFIED",
+					codeQuality: "UNVERIFIED",
+					innovationAndUsefulness: "UNVERIFIED",
+					reproducibility: "UNVERIFIED",
+				},
+				marks: null,
 			})),
 			documents: documents.results,
 			deadlines,

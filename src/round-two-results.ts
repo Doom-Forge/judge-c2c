@@ -18,6 +18,11 @@ const publicationInput = z
 		reason: z.string().trim().min(10).max(1000),
 	})
 	.strict();
+const finalScoreInput = z.object({
+	teamId: z.string().min(1).max(80),
+	score: z.number().finite().min(0).max(100),
+	reason: z.string().trim().min(10).max(1000),
+}).strict();
 
 function boundedText(value: string, maxBytes = 512): { text: string; truncated: boolean } {
 	const encoder = new TextEncoder();
@@ -99,7 +104,7 @@ function fitTeamFeedback(
 }
 
 async function aggregateResults(db: D1Database) {
-	const [teams, reviews, repositories] = await db.batch([
+	const [teams, reviews, repositories, finalScores, unverifiedPullRequests] = await db.batch([
 		db
 			.prepare(
 				"SELECT id,name,status FROM teams WHERE hackathon_id='initial' AND status='ACTIVE' ORDER BY name LIMIT 500",
@@ -112,8 +117,14 @@ async function aggregateResults(db: D1Database) {
 			.prepare(
 				"SELECT tr.team_id,tr.repository_id,r.full_name FROM team_repositories tr JOIN github_repositories r ON r.id=tr.repository_id WHERE tr.active=1",
 			),
+		db.prepare(
+			"SELECT team_id,score,judge_identity_id,reason,created_at FROM round_two_team_final_scores",
+		),
+		db.prepare(
+			"SELECT team_id,count(*) AS pull_request_count FROM unverified_pr_submissions WHERE team_id IS NOT NULL GROUP BY team_id",
+		),
 	]);
-	if (!teams || !reviews || !repositories) {
+	if (!teams || !reviews || !repositories || !finalScores || !unverifiedPullRequests) {
 		throw new Error("D1 batch returned incomplete result inputs");
 	}
 	const scores = new Map<
@@ -131,6 +142,12 @@ async function aggregateResults(db: D1Database) {
 		judgeIdentityId: string;
 		reviewId: string;
 	}> = [];
+	const officialScores = new Map((finalScores.results as {
+		team_id: string; score: number; judge_identity_id: string; reason: string; created_at: string;
+	}[]).map((item) => [item.team_id, item]));
+	const unverifiedCounts = new Map((unverifiedPullRequests.results as {
+		team_id: string; pull_request_count: number;
+	}[]).map((item) => [item.team_id, item.pull_request_count]));
 	for (
 		const team of teams.results as {
 			id: string;
@@ -219,6 +236,7 @@ async function aggregateResults(db: D1Database) {
 				Math.max(0, Math.min(MAX_TEAM_FEEDBACK_BYTES, remainingFeedbackBytes)),
 			);
 		remainingFeedbackBytes -= boundedFeedback.bytes;
+		const official = officialScores.get(team.id);
 		return {
 			teamId: team.id,
 			teamName: team.name,
@@ -232,19 +250,104 @@ async function aggregateResults(db: D1Database) {
 			analysisJudgeCount: current.analysis.length,
 			engineeringAverage: calculated.engineeringAverage,
 			engineeringJudgeCount: current.engineering.length,
-			status: calculated.status,
-			finalScore: calculated.finalScore,
+			status: official ? "READY" : "PENDING",
+			manualAggregateScore: calculated.finalScore,
+			finalScore: official?.score ?? null,
+			finalScoreBy: official?.judge_identity_id ?? null,
+			finalScoreAt: official?.created_at ?? null,
+			finalScoreReason: official?.reason ?? null,
+			automatedEvidence: {
+				status: "UNVERIFIED",
+				marks: null,
+				pullRequestCount: unverifiedCounts.get(team.id) ?? 0,
+			},
 			...(boundedFeedback.feedback ? { feedback: boundedFeedback.feedback } : {}),
 			...(boundedFeedback.feedbackTruncated ? { feedbackTruncated: true } : {}),
 		};
 	});
 	return {
 		teams: results.length,
-		completed: results.filter((result) => result.status === "READY").length,
-		pending: results.filter((result) => result.status === "PENDING").length,
+		completed: results.filter((result) => result.finalScore !== null).length,
+		pending: results.filter((result) => result.finalScore === null).length,
+		scoreSource: "EXPLICIT_JUDGE",
 		results,
 		reviewSources,
 	};
+}
+
+async function finalScoreContext(db: D1Database, teamId: string) {
+	const [team, reviews, prs, score] = await db.batch([
+		db.prepare("SELECT id,name FROM teams WHERE id=? AND hackathon_id='initial' AND status='ACTIVE'").bind(teamId),
+		db.prepare("SELECT stage,count(*) AS review_count,round(avg(score),1) AS average FROM round_two_review_submissions s WHERE s.team_id=? AND s.revision=(SELECT max(latest.revision) FROM round_two_review_submissions latest WHERE latest.team_id=s.team_id AND latest.judge_identity_id=s.judge_identity_id AND latest.stage=s.stage) GROUP BY stage").bind(teamId),
+		db.prepare("SELECT u.repository_id,u.pr_number,u.head_sha,u.author_login,u.github_updated_at,u.closed,r.full_name FROM unverified_pr_submissions u JOIN github_repositories r ON r.id=u.repository_id JOIN team_repositories tr ON tr.team_id=u.team_id AND tr.repository_id=u.repository_id AND tr.active=1 WHERE u.team_id=? ORDER BY u.github_updated_at DESC,u.repository_id,u.pr_number LIMIT 100").bind(teamId),
+		db.prepare("SELECT team_id,score,judge_identity_id,reason,created_at FROM round_two_team_final_scores WHERE team_id=?").bind(teamId),
+	]);
+	if (!team || !reviews || !prs || !score) return null;
+	const teamRow = team.results[0] as { id: string; name: string } | undefined;
+	if (!teamRow) return null;
+	const byStage = Object.fromEntries((reviews.results as { stage: string; review_count: number; average: number | null }[]).map((row) => [row.stage, { reviewCount: row.review_count, average: row.average }]));
+	const engineering = byStage.ENGINEERING ?? { reviewCount: 0, average: null };
+	const latestScore = score.results[0] as { team_id: string; score: number; judge_identity_id: string; reason: string; created_at: string } | undefined;
+	const pullRequests = (prs.results as { repository_id: number; pr_number: number; head_sha: string; author_login: string; github_updated_at: string; closed: number; full_name: string }[]).map((pr) => ({
+		repositoryId: pr.repository_id,
+		repository: pr.full_name,
+		prNumber: pr.pr_number,
+		headSha: pr.head_sha,
+		authorLogin: pr.author_login,
+		updatedAt: pr.github_updated_at,
+		closed: pr.closed === 1,
+		evaluationStatus: "UNVERIFIED" as const,
+		marks: null,
+		categories: ["Functional correctness", "Security", "Performance and scalability", "Code quality", "Innovation and usefulness", "Reproducibility"].map((category) => ({ category, status: "UNVERIFIED" as const, score: null })),
+	}));
+	return {
+		team: teamRow,
+		manualReviews: {
+			analysis: byStage.ANALYSIS ?? { reviewCount: 0, average: null },
+			engineering,
+		},
+		machineEvidence: { status: "UNVERIFIED" as const, marks: null, pullRequests },
+		finalScore: latestScore ? { score: latestScore.score, judgeIdentityId: latestScore.judge_identity_id, reason: latestScore.reason, createdAt: latestScore.created_at } : null,
+		canFinalize: !latestScore && engineering.reviewCount > 0,
+	};
+}
+
+async function explicitTeamFinalScore(request: Request, db: D1Database, session: ConsoleSession) {
+	const url = new URL(request.url);
+	if (request.method === "GET") {
+		if (session.role !== "judge" || !session.identity_id) return json({ error: "JUDGE_REQUIRED" }, 403);
+		const teamId = url.searchParams.get("teamId");
+		if (!teamId || teamId.length > 80) return json({ error: "INVALID_FINAL_SCORE_SCOPE" }, 400);
+		const assignment = await db.prepare("SELECT a.id FROM round_two_judge_assignments a JOIN teams t ON t.id=a.team_id WHERE a.judge_identity_id=? AND a.team_id=? AND a.revoked_at IS NULL AND t.status='ACTIVE' AND t.hackathon_id='initial'").bind(session.identity_id, teamId).first();
+		if (!assignment) return json({ error: "NOT_FOUND" }, 404);
+		const context = await finalScoreContext(db, teamId);
+		return context ? json(context) : json({ error: "NOT_FOUND" }, 404);
+	}
+	if (request.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
+	if (session.role !== "judge" || !session.identity_id) return json({ error: "JUDGE_REQUIRED" }, 403);
+	let data: z.infer<typeof finalScoreInput>;
+	try { data = finalScoreInput.parse(JSON.parse(new TextDecoder().decode(await boundedBody(request, 5000)))); }
+	catch { return json({ error: "INVALID_INPUT" }, 400); }
+	const assignment = await db.prepare("SELECT a.id FROM round_two_judge_assignments a JOIN teams t ON t.id=a.team_id WHERE a.judge_identity_id=? AND a.team_id=? AND a.revoked_at IS NULL AND t.status='ACTIVE' AND t.hackathon_id='initial'").bind(session.identity_id, data.teamId).first();
+	if (!assignment) return json({ error: "NOT_FOUND" }, 404);
+	const context = await finalScoreContext(db, data.teamId);
+	if (!context) return json({ error: "NOT_FOUND" }, 404);
+	if (context.finalScore) return json({ error: "FINAL_SCORE_ALREADY_SET", finalScore: context.finalScore }, 409);
+	if (!context.manualReviews.engineering.reviewCount) return json({ error: "ENGINEERING_REVIEW_REQUIRED" }, 409);
+	const evidenceSummary = {
+		manualReviews: context.manualReviews,
+		machineEvidence: { status: context.machineEvidence.status, marks: null, pullRequestCount: context.machineEvidence.pullRequests.length },
+	};
+	const actor = "judge:" + session.identity_id;
+	const changes = await db.batch([
+		db.prepare("INSERT INTO round_two_team_final_scores(team_id,judge_identity_id,score,reason,evidence_summary) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM round_two_judge_assignments a JOIN teams t ON t.id=a.team_id WHERE a.judge_identity_id=? AND a.team_id=? AND a.revoked_at IS NULL AND t.status='ACTIVE' AND t.hackathon_id='initial') AND EXISTS(SELECT 1 FROM round_two_review_submissions s WHERE s.team_id=? AND s.stage='ENGINEERING') AND NOT EXISTS(SELECT 1 FROM round_two_team_final_scores WHERE team_id=?)").bind(data.teamId, session.identity_id, data.score, data.reason, JSON.stringify(evidenceSummary), session.identity_id, data.teamId, data.teamId, data.teamId),
+		db.prepare("INSERT INTO audit(action,entity,actor,changes) SELECT 'round_two.team_final_score.set',?,?,? WHERE changes()=1").bind(data.teamId, actor, JSON.stringify({ score: data.score, reason: data.reason, evidenceSummary })),
+	]);
+	if (!changes[0]?.meta.changes) {
+		const latest = await finalScoreContext(db, data.teamId);
+		return latest?.finalScore ? json({ error: "FINAL_SCORE_ALREADY_SET", finalScore: latest.finalScore }, 409) : json({ error: "ENGINEERING_REVIEW_REQUIRED" }, 409);
+	}
+	return json({ teamId: data.teamId, finalScore: { score: data.score, judgeIdentityId: session.identity_id, reason: data.reason, createdAt: new Date().toISOString() } }, 201);
 }
 
 function rankingEntry<T extends Record<string, unknown>>(team: T, rank: number) {
@@ -311,8 +414,9 @@ async function createSnapshot(
 	} catch {
 		return json({ error: "INVALID_INPUT" }, 400);
 	}
-	const results = await aggregateResults(db),
-		ready = results.results
+	const results = await aggregateResults(db);
+	if (results.pending > 0) return json({ error: "FINAL_SCORES_REQUIRED", pendingTeams: results.pending }, 409);
+	const ready = results.results
 			.filter((result) =>
 				result.status === "READY" && result.finalScore !== null
 			)
@@ -328,7 +432,7 @@ async function createSnapshot(
 		previousScore = team.finalScore;
 		return rankingEntry(team, rank);
 	});
-	const snapshot = { ...results, ranking },
+	const snapshot = { ...results, ranking, scoreSource: "EXPLICIT_JUDGE" },
 		id = crypto.randomUUID(),
 		actor = "organizer:" + (session.identity_id ?? session.hash);
 	await db.batch([
@@ -365,6 +469,8 @@ async function exportSnapshot(db: D1Database, snapshotId: string) {
 			analysisJudgeCount: number;
 			engineeringAverage: number | null;
 			engineeringJudgeCount: number;
+			manualAggregateScore?: number | null;
+			automatedEvidence?: { status: string; marks: number | null };
 			status: string;
 			finalScore: number | null;
 		}[];
@@ -382,6 +488,9 @@ async function exportSnapshot(db: D1Database, snapshotId: string) {
 		"analysisJudgeCount",
 		"engineeringAverage",
 		"engineeringJudgeCount",
+		"manualAggregateScore",
+		"automatedEvidenceStatus",
+		"automatedMarks",
 		"status",
 		"finalScore",
 		"rank",
@@ -402,6 +511,9 @@ async function exportSnapshot(db: D1Database, snapshotId: string) {
 				team.analysisJudgeCount,
 				team.engineeringAverage,
 				team.engineeringJudgeCount,
+				team.manualAggregateScore,
+				team.automatedEvidence?.status ?? "UNVERIFIED",
+				team.automatedEvidence?.marks ?? null,
 				team.status,
 				team.finalScore,
 				ranks.get(team.teamId) ?? null,
@@ -477,7 +589,11 @@ async function setPublication(
 			teams: number;
 			completed: number;
 			pending: number;
+			scoreSource?: string;
 		};
+		if (snapshot.scoreSource !== "EXPLICIT_JUDGE" && current?.snapshot_id !== data.snapshotId) {
+			return json({ error: "EXPLICIT_FINAL_SCORES_REQUIRED" }, 409);
+		}
 		if (
 			snapshot.pending !== 0 ||
 			snapshot.completed !== snapshot.teams
@@ -555,8 +671,9 @@ async function setFreeze(
 	if (!freeze && !current) return json({ error: "RESULTS_NOT_FROZEN" }, 409);
 	let snapshotId: string;
 	if (freeze) {
-		const results = await aggregateResults(db),
-			ready = results.results
+		const results = await aggregateResults(db);
+		if (results.pending > 0) return json({ error: "FINAL_SCORES_REQUIRED", pendingTeams: results.pending }, 409);
+		const ready = results.results
 				.filter((result) =>
 					result.status === "READY" && result.finalScore !== null
 				)
@@ -572,7 +689,7 @@ async function setFreeze(
 			previousScore = team.finalScore;
 			return rankingEntry(team, rank);
 		});
-		const snapshot = { ...results, ranking };
+		const snapshot = { ...results, ranking, scoreSource: "EXPLICIT_JUDGE" };
 		snapshotId = crypto.randomUUID();
 		const eventId = crypto.randomUUID();
 		const transition = await db.batch([
@@ -635,12 +752,13 @@ export async function roundTwoResults(
 	env: Env,
 	session: ConsoleSession,
 ) {
-	if (session.role !== "organizer") {
-		return json({ error: "ORGANIZER_REQUIRED" }, 403);
-	}
 	const db = env.ORG_DB;
 	if (!db) return json({ error: "ORGANIZATION_NOT_CONFIGURED" }, 503);
 	const path = new URL(request.url).pathname;
+	if (path.endsWith("/results/final-score")) return explicitTeamFinalScore(request, db, session);
+	if (session.role !== "organizer") {
+		return json({ error: "ORGANIZER_REQUIRED" }, 403);
+	}
 	const exportMatch = path.match(
 		/\/results\/snapshots\/([^/]+)\/export$/,
 	);

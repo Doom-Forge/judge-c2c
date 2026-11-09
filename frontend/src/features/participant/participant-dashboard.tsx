@@ -26,10 +26,13 @@ type ParticipantPayload = {
   members?: Array<{ displayName: string; email: string; githubLogin: string | null; githubLinked: boolean }>;
   currentMember?: { displayName: string; email: string; githubLogin: string | null; githubLinked: boolean } | null;
   githubLinked?: boolean;
+  isTeamLead?: boolean;
+  trackSelected?: boolean;
   submissions: Array<{ repository_id: number; pr_number: number; status: string; github_updated_at: string; full_name: string }>;
   evaluations: Array<{ id: string; state: string; created_at: string }>;
 };
 type TrackOption = { repositoryId: number; fullName: string };
+type ParticipantOnboardingStatus = { isTeamLead: boolean; trackSelected: boolean; githubLinked: boolean; canEnterDashboard: boolean };
 const challengeTracks = [
   { fullName: "180DC-VIT-CHENNAI/mazhai-cover", name: "Mazhai Cover", brief: "Micro-insurance pricing" },
   { fullName: "180DC-VIT-CHENNAI/pricingpulse", name: "PricingPulse", brief: "Dynamic pricing simulator" },
@@ -94,6 +97,10 @@ export function ParticipantDashboard({ view = "overview" }: { readonly view?: Pa
   const [linkError, setLinkError] = useState("");
   const [linkingGithub, setLinkingGithub] = useState(false);
   const [githubLinked, setGithubLinked] = useState(false);
+  const [isTeamLead, setIsTeamLead] = useState(false);
+  const [trackSelected, setTrackSelected] = useState(false);
+  const [canEnterDashboard, setCanEnterDashboard] = useState(false);
+  const [teamKey, setTeamKey] = useState<string | null>(null);
   const [githubUsername, setGithubUsername] = useState(() => sessionStorage.getItem("doomforge.participant-github-username") ?? "");
 
   async function load() {
@@ -102,10 +109,27 @@ export function ParticipantDashboard({ view = "overview" }: { readonly view?: Pa
     setResultsUnavailable(false);
     setAnnouncementError("");
     try {
-      const [consoleData, documentData, trackData, results, announcementData] = await Promise.all([
+      const [consoleData, trackData, onboarding] = await Promise.all([
         request<ParticipantPayload>(""),
+        request<{ repositories: TrackOption[]; isTeamLead?: boolean }>("/track-options"),
+        request<ParticipantOnboardingStatus>("/status"),
+      ]);
+      if (requestId !== loadRequestId.current) return;
+      setData(consoleData);
+      setSelectedRepositoryId(consoleData.track?.repositoryId ?? null);
+      setTrackOptions(trackData.repositories);
+      const linked = onboarding.githubLinked === true || consoleData.githubLinked === true || consoleData.currentMember?.githubLinked === true;
+      const chosen = onboarding.trackSelected === true || consoleData.trackSelected === true || Boolean(consoleData.track);
+      setGithubLinked(linked);
+      setIsTeamLead(onboarding.isTeamLead === true || consoleData.isTeamLead === true || trackData.isTeamLead === true);
+      setTrackSelected(chosen);
+      setCanEnterDashboard(onboarding.canEnterDashboard === true && chosen && linked);
+      if (!(onboarding.canEnterDashboard && chosen && linked)) {
+        if (requestId === loadRequestId.current) setState(consoleData.team?.status === "ACTIVE" ? "ready" : "empty");
+        return;
+      }
+      const [documentData, results, announcementData] = await Promise.all([
         request<{ documents: DocumentRecord[]; deadlines: ParticipantDeadlines }>("/documents"),
-        request<{ repositories: TrackOption[] }>("/track-options"),
         request<{ published: boolean; results?: ParticipantResult[]; ranking?: Array<{ teamId: string; rank: number }>; sharedStageScores?: SharedStageScore[] }>("/results").catch(() => null),
         fetch("/api/organization/announcements", { credentials: "same-origin" }).then(async response => {
           if (!response.ok) throw new Error(`Announcements unavailable (${response.status})`);
@@ -113,14 +137,10 @@ export function ParticipantDashboard({ view = "overview" }: { readonly view?: Pa
         }).catch(cause => ({ announcements: [], error: cause instanceof Error ? cause.message : "Announcements are unavailable." })),
       ]);
       if (requestId !== loadRequestId.current) return;
-      setData(consoleData);
-      setSelectedRepositoryId(consoleData.track?.repositoryId ?? null);
       setDocuments(documentData.documents);
       setDeadlines(documentData.deadlines);
-      setTrackOptions(trackData.repositories);
       setAnnouncements(announcementData.announcements);
       setAnnouncementError("error" in announcementData ? announcementData.error : "");
-      setGithubLinked(consoleData.githubLinked === true || consoleData.currentMember?.githubLinked === true);
       setResultsUnavailable(results === null);
       setPublishedResults(results?.published === true ? {
         results: results.results ?? [],
@@ -167,6 +187,7 @@ export function ParticipantDashboard({ view = "overview" }: { readonly view?: Pa
     setTrackBusy(true); setError("");
     try {
       await request("/track", { method: "POST", body: JSON.stringify({ repositoryId }) });
+      setTrackSelected(true);
       await load();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Track selection failed.";
@@ -215,6 +236,25 @@ export function ParticipantDashboard({ view = "overview" }: { readonly view?: Pa
   if (state === "error") return <main className="page-content"><Card><CardContent className="pt-5"><p role="alert"><AlertCircle className="mr-2 inline" />Participant workspace unavailable: {error}</p><Button className="mt-4" onClick={() => void load()}>Try again</Button></CardContent></Card></main>;
   if (state === "empty" || !data) return <main className="page-content"><Card><CardContent className="pt-5"><p>No active team workspace is available.</p></CardContent></Card></main>;
 
+  async function revealTeamKey() {
+    setError("");
+    try {
+      const result = await request<{ teamKey: string }>("/team-key");
+      setTeamKey(result.teamKey);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Team key is unavailable.");
+    }
+  }
+
+  if (!canEnterDashboard) {
+    const githubSetup = <Card><CardHeader><div><CardTitle>Verify your GitHub account</CardTitle><CardDescription>Link the account that will open pull requests.</CardDescription></div><GitPullRequest className="text-[var(--accent)]" /></CardHeader><CardContent>{githubLinked ? <p role="status" className="text-sm">GitHub account @{data.currentMember?.githubLogin ?? "linked"} is verified.</p> : <><label className="mb-2 block text-sm font-medium" htmlFor="participant-github-username">GitHub username</label><input autoComplete="username" className="mb-3 block w-full rounded-md border border-[var(--border)] bg-[var(--background)] p-2" id="participant-github-username" onChange={event => { setGithubUsername(event.currentTarget.value); setLinkError(""); }} placeholder="e.g. octocat" value={githubUsername} /><p className="mb-3 text-sm text-[var(--muted)]">Continue with GitHub, then verify that the signed-in account matches.</p><a className="mr-4 inline-flex min-h-11 items-center text-sm text-[var(--info)]" href="/api/auth/github" onClick={beginGithubLink}>Continue with GitHub <ArrowUpRight className="ml-1 inline size-4" /></a><Button disabled={linkingGithub} onClick={() => void linkGithub()}>{linkingGithub ? "Verifying…" : "Verify username"}</Button>{linkError && <p className="mt-2 text-sm text-[var(--error)]" role="alert">{linkError}</p>}</>}</CardContent></Card>;
+    return <main className="page-content space-y-5"><section><p className="mb-2 text-xs uppercase tracking-[.16em] text-[var(--muted)]">Participant onboarding · step {trackSelected ? "2" : "1"} of 2</p><h1 className="text-3xl font-semibold">Set up {data.team.name}</h1><p className="mt-2 text-sm text-[var(--muted)]">Choose your team repository, then verify your GitHub account to unlock the workspace.</p></section>{error && <p role="alert" className="text-[var(--error)]">{error}</p>}
+      {!trackSelected && isTeamLead && <Card><CardHeader><div><CardTitle>1 · Choose your challenge</CardTitle><CardDescription>This choice is final for your team. Only the team lead can confirm it.</CardDescription></div><GitPullRequest className="text-[var(--accent)]" /></CardHeader><CardContent><fieldset className="min-w-0" disabled={trackBusy}><legend className="sr-only">Choose one challenge repository</legend><div className="grid gap-3 sm:grid-cols-2">{challengeTracks.map(challenge => { const repo = trackOptions.find(option => option.fullName.toLowerCase() === challenge.fullName.toLowerCase()); const selected = repo !== undefined && selectedRepositoryId === repo.repositoryId; return <div key={challenge.fullName} className={`min-w-0 rounded-lg border p-4 ${selected ? "border-[var(--accent)] bg-[var(--raised)]" : "border-[var(--border)]"}`}><button type="button" aria-pressed={selected} disabled={!repo} onClick={() => repo && setSelectedRepositoryId(repo.repositoryId)} className="flex min-h-11 w-full items-start justify-between gap-3 text-left disabled:opacity-60"><span className="min-w-0"><span className="block font-semibold">{challenge.name}</span><span className="mt-1 block text-xs text-[var(--muted)]">{challenge.brief}</span></span><span className="text-xs text-[var(--muted)]">{!repo ? "Unavailable" : selected ? "Selected" : "Choose"}</span></button>{repo && <a className="mt-2 inline-flex min-h-11 items-center break-all text-xs text-[var(--info)]" href={`https://github.com/${repo.fullName}`} target="_blank" rel="noreferrer" aria-label={`${challenge.name} GitHub repository`}>{repo.fullName}<ArrowUpRight className="ml-1 size-3 shrink-0" /></a>}</div>; })}</div><Button className="mt-4 w-full sm:w-auto" disabled={trackBusy || selectedRepositoryId === null || !trackOptions.some(option => option.repositoryId === selectedRepositoryId)} onClick={() => void confirmTrackSelection()}>{trackBusy ? "Confirming repository…" : "Confirm team repository"}</Button></fieldset></CardContent></Card>}
+      {!trackSelected && !isTeamLead && <Card><CardHeader><div><CardTitle>Waiting for your team lead</CardTitle><CardDescription>Your team dashboard opens after the lead confirms a challenge repository.</CardDescription></div></CardHeader><CardContent><p className="text-sm text-[var(--muted)]">Ask your team lead to finish repository selection. You can verify GitHub now; your team key remains with the lead.</p></CardContent></Card>}
+      {trackSelected && <><Card><CardHeader><div><CardTitle>1 · Repository confirmed</CardTitle><CardDescription>This team is assigned to the selected challenge.</CardDescription></div></CardHeader><CardContent><p className="font-medium">{data.track?.fullName ?? "Repository selected"}</p></CardContent></Card>{githubSetup}</>}
+      {trackSelected && githubLinked && isTeamLead && <Card><CardHeader><div><CardTitle>Team access key</CardTitle><CardDescription>Share this key only with members on your imported team roster.</CardDescription></div><Users className="text-[var(--accent)]" /></CardHeader><CardContent>{teamKey ? <p className="rounded-lg border border-[var(--border)] bg-[var(--raised)] p-4 font-mono text-lg" aria-live="polite">{teamKey}</p> : <Button onClick={() => void revealTeamKey()}>Reveal team key</Button>}</CardContent></Card>}</main>;
+  }
+
   const latestDocument = documents[0];
   const heading = view === "submission" ? "My submission" : view === "evaluation" ? "Evaluation" : `Welcome, ${data.team.name}`;
   return <main className="page-content space-y-5">
@@ -225,31 +265,12 @@ export function ParticipantDashboard({ view = "overview" }: { readonly view?: Pa
     </section>
     {(view === "overview" || view === "submission") && <>
     <div className="grid gap-4 lg:grid-cols-3">
-      <Card><CardHeader><div><CardTitle>Assigned track</CardTitle><CardDescription>Repository linked to this team</CardDescription></div><GitPullRequest className="text-[var(--accent)]" /></CardHeader><CardContent>
-        {data.track ? <a className="font-medium text-[var(--info)]" href={`https://github.com/${data.track.fullName}`} target="_blank" rel="noreferrer">{data.track.fullName}<ArrowUpRight className="ml-1 inline size-4" /></a> : <p className="text-sm text-[var(--muted)]">No repository selected yet.</p>}
-        <fieldset className="mt-5 min-w-0" disabled={trackBusy}>
-          <legend className="mb-3 text-sm font-semibold">Choose your challenge repository</legend>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {challengeTracks.map(challenge => {
-              const repo = trackOptions.find(option => option.fullName.toLowerCase() === challenge.fullName.toLowerCase());
-              const selected = repo !== undefined && selectedRepositoryId === repo.repositoryId;
-              const current = repo !== undefined && data.track?.repositoryId === repo.repositoryId;
-              return <div key={challenge.fullName} className={`min-w-0 rounded-lg border p-3 ${selected ? "border-[var(--accent)] bg-[var(--raised)]" : "border-[var(--border)]"}`}>
-                <button type="button" aria-pressed={selected} disabled={!repo} onClick={() => repo && setSelectedRepositoryId(repo.repositoryId)} className="flex min-h-11 w-full items-start justify-between gap-3 text-left disabled:cursor-not-allowed disabled:opacity-60">
-                  <span className="min-w-0"><span className="block font-semibold">{challenge.name}</span><span className="mt-1 block text-xs text-[var(--muted)]">{challenge.brief}</span></span>
-                  <span className="shrink-0 text-xs text-[var(--muted)]">{!repo ? "Unavailable" : current ? "Current" : selected ? "Selected" : "Select"}</span>
-                </button>
-                {repo ? <a className="mt-2 inline-flex min-h-11 max-w-full items-center break-all text-xs text-[var(--info)] underline-offset-2 hover:underline" href={`https://github.com/${repo.fullName}`} target="_blank" rel="noreferrer" aria-label={`${challenge.name} GitHub repository`}>{repo.fullName}<ArrowUpRight className="ml-1 size-3 shrink-0" /></a> : <p className="mt-2 text-xs text-[var(--muted)]">This challenge repository is not currently available.</p>}
-              </div>;
-            })}
-          </div>
-          <Button className="mt-4 w-full sm:w-auto" disabled={trackBusy || selectedRepositoryId === null || selectedRepositoryId === data.track?.repositoryId || !trackOptions.some(option => option.repositoryId === selectedRepositoryId)} onClick={() => void confirmTrackSelection()}>{trackBusy ? "Saving selection…" : data.track ? "Confirm repository change" : "Confirm repository"}</Button>
-        </fieldset>
-      </CardContent></Card>
+      <Card><CardHeader><div><CardTitle>Assigned challenge</CardTitle><CardDescription>Confirmed by your team lead</CardDescription></div><GitPullRequest className="text-[var(--accent)]" /></CardHeader><CardContent>{data.track ? <a className="font-medium text-[var(--info)]" href={`https://github.com/${data.track.fullName}`} target="_blank" rel="noreferrer">{data.track.fullName}<ArrowUpRight className="ml-1 inline size-4" /></a> : <p className="text-sm text-[var(--muted)]">No repository selected yet.</p>}</CardContent></Card>
       <Card><CardHeader><div><CardTitle>Requirements</CardTitle><CardDescription>Round 2 submission checklist</CardDescription></div><FileText className="text-[var(--accent)]" /></CardHeader><CardContent><ul className="space-y-3 text-sm"><li>Analysis document: PDF or DOCX, up to 2 MB</li><li>Engineering work submitted through pull requests</li><li>Keep your analysis findings, fixes, and proposed features clear</li></ul></CardContent></Card>
       <Card><CardHeader><div><CardTitle>Deadlines</CardTitle><CardDescription>Competition schedule</CardDescription></div><Clock3 className="text-[var(--accent)]" /></CardHeader><CardContent>{deadlines && (deadlines.analysisDocumentDeadline || deadlines.pullRequestDeadline) ? <dl className="space-y-3 text-sm">{deadlines.analysisDocumentDeadline && <div><dt className="text-[var(--muted)]">Analysis document</dt><dd>{prettyDate(deadlines.analysisDocumentDeadline)}</dd></div>}{deadlines.pullRequestDeadline && <div><dt className="text-[var(--muted)]">Pull request</dt><dd>{prettyDate(deadlines.pullRequestDeadline)}</dd></div>}</dl> : <p className="text-sm text-[var(--muted)]">No deadlines have been set.</p>}</CardContent></Card>
     </div>
     {view === "overview" && <div className="grid gap-4 lg:grid-cols-2">
+      {isTeamLead && <Card><CardHeader><div><CardTitle>Team access key</CardTitle><CardDescription>Give this key to rostered team members so they can join.</CardDescription></div><Users className="text-[var(--accent)]" /></CardHeader><CardContent>{teamKey ? <p className="rounded-lg border border-[var(--border)] bg-[var(--raised)] p-4 font-mono text-lg" aria-live="polite">{teamKey}</p> : <Button onClick={() => void revealTeamKey()}>Reveal team key</Button>}</CardContent></Card>}
       <Card><CardHeader><div><CardTitle>Team members</CardTitle><CardDescription>Roster connected to this team workspace</CardDescription></div><Users className="text-[var(--accent)]" /></CardHeader><CardContent>{data.members?.length ? <ul className="space-y-3">{data.members.map(member => <li className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] pt-3 text-sm" key={member.email}><span><strong>{member.displayName}</strong><small className="ml-2 text-[var(--muted)]">{member.email}</small></span><span className="text-xs text-[var(--muted)]">{member.githubLogin ? `@${member.githubLogin}` : "GitHub not linked"}</span></li>)}</ul> : <p className="text-sm text-[var(--muted)]">No member roster is available yet.</p>}</CardContent></Card>
       <Card><CardHeader><div><CardTitle>GitHub account</CardTitle><CardDescription>Enter the username you use for the competition</CardDescription></div><GitPullRequest className="text-[var(--accent)]" /></CardHeader><CardContent>{githubLinked ? <p className="text-sm" role="status">GitHub account @{data.currentMember?.githubLogin ?? data.members?.find(member => member.githubLinked)?.githubLogin ?? "linked"} is linked.</p> : <><label className="mb-2 block text-sm font-medium" htmlFor="participant-github-username">GitHub username</label><input autoComplete="username" className="mb-3 block w-full rounded-md border border-[var(--border)] bg-[var(--background)] p-2" id="participant-github-username" onChange={event => { setGithubUsername(event.currentTarget.value); setLinkError(""); }} placeholder="e.g. octocat" value={githubUsername} /><p className="mb-3 text-sm text-[var(--muted)]">Continue with GitHub, then return here to verify that the signed-in account matches this username.</p><a className="mr-4 inline-flex min-h-11 items-center text-sm text-[var(--info)]" href="/api/auth/github" onClick={beginGithubLink}>Continue with GitHub <ArrowUpRight className="ml-1 inline size-4" /></a><Button disabled={linkingGithub} onClick={() => void linkGithub()}>{linkingGithub ? "Verifying…" : "Verify username"}</Button>{linkError && <p className="mt-2 text-sm text-[var(--error)]" role="alert">{linkError}</p>}</>}</CardContent></Card>
     </div>}

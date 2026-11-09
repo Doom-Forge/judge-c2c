@@ -82,11 +82,11 @@ beforeAll(async () => {
 			.bind(1442222462 + index, `180DC-VIT-CHENNAI/${name}`, 0, "main")
 			.run();
 	}
-	await db.prepare("CREATE TABLE teams(id TEXT PRIMARY KEY,status TEXT)")
+	await db.prepare("CREATE TABLE teams(id TEXT PRIMARY KEY,status TEXT,hackathon_id TEXT DEFAULT 'initial',track_finalized INTEGER DEFAULT 0)")
 		.run();
 	await db
 		.prepare(
-			"CREATE TABLE team_members(team_id TEXT,github_id INTEGER,github_login TEXT,active INTEGER,hackathon_id TEXT)",
+			"CREATE TABLE team_members(id TEXT,team_id TEXT,github_id INTEGER,github_login TEXT,active INTEGER,hackathon_id TEXT)",
 		)
 		.run();
 	await db
@@ -94,14 +94,16 @@ beforeAll(async () => {
 			"CREATE TABLE team_repositories(team_id TEXT,repository_id INTEGER,active INTEGER)",
 		)
 		.run();
+	await db.prepare("CREATE TABLE console_identities(id TEXT,team_id TEXT,role TEXT,team_member_id TEXT,team_roster_member_id TEXT,github_verified_at TEXT,revoked_at TEXT)").run();
+	await db.prepare("CREATE TABLE team_roster_members(id TEXT,linked_team_member_id TEXT,active INTEGER)").run();
 	await db
 		.prepare(
-			"INSERT INTO teams VALUES('team-one','ACTIVE'),('team-two','ACTIVE')",
+			"INSERT INTO teams(id,status) VALUES('team-one','ACTIVE'),('team-two','ACTIVE')",
 		)
 		.run();
 	await db
 		.prepare(
-			"INSERT INTO team_members VALUES('team-one',9001,'member-one',1,'initial'),('team-two',9002,'member-two',1,'initial')",
+			"INSERT INTO team_members VALUES('member-one','team-one',9001,'member-one',1,'initial'),('member-two','team-two',9002,'member-two',1,'initial')",
 		)
 		.run();
 	await db
@@ -117,6 +119,9 @@ beforeAll(async () => {
 			.split(";")
 			.filter((statement) => statement.trim())
 	) {
+		await db.prepare(sql).run();
+	}
+	for (const sql of readFileSync("migrations/0048_unverified_matrix_intake.sql", "utf8").split(";").filter((statement) => statement.trim())) {
 		await db.prepare(sql).run();
 	}
 	env = {
@@ -156,7 +161,7 @@ it("requires organizer auth for matrix overview", async () => {
 			.status,
 	).toBe(401);
 });
-it("shows the four new repos as specification-required and refuses their PRs", async () => {
+it("durably accepts the four new repos without dispatching any matrix run", async () => {
 	const response = await matrixApi(
 		new Request("https://test/api/matrix/overview", {
 			headers: { Authorization: `Bearer ${"x".repeat(40)}` },
@@ -193,12 +198,17 @@ it("shows the four new repos as specification-required and refuses their PRs", a
 			env,
 			`unconfigured-${name}`,
 			`hash-${name}`,
+			undefined,
+			{ publishCheck: async () => undefined },
 		);
-		expect(result.status).toBe(403);
+		expect(result.status).toBe(202);
+		expect(await result.json()).toMatchObject({ verification: "UNVERIFIED", marks: null });
 	}
 	expect(jobs).toHaveLength(0);
+	expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM unverified_pr_submissions").first("n")).toBe(4);
+	expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM matrix_runs").first("n")).toBe(0);
 });
-it("keeps a specification-required repo blocked even if a matrix row exists", async () => {
+it("does not run a newly added but unapproved matrix row", async () => {
 	const repositoryId = 1442222465;
 	await env.DB.prepare("INSERT INTO matrix_repositories VALUES(?,?,?,?,?,?)")
 		.bind(
@@ -220,11 +230,11 @@ it("keeps a specification-required repo blocked even if a matrix row exists", as
 		env,
 		"unreviewed-janus",
 		"unreviewed-janus-hash",
+		undefined,
+		{ publishCheck: async () => undefined },
 	);
-	expect(result.status).toBe(403);
-	expect(await result.json()).toEqual({
-		error: "CHALLENGE_SPECIFICATION_REQUIRED",
-	});
+	expect(result.status).toBe(202);
+	expect(await result.json()).toMatchObject({ verification: "UNVERIFIED", marks: null });
 	expect(jobs).toHaveLength(0);
 });
 it("requests the default reviewer for a verified unconfigured PR without queuing evaluation", async () => {
@@ -276,15 +286,14 @@ it("requests the default reviewer for a verified unconfigured PR without queuing
 				undefined,
 				{
 					clientFactory,
+					publishCheck: async () => undefined,
 					deferReviewer: (task) => {
 						reviewerTask = task;
 					},
 				},
 			);
-			expect(response.status).toBe(403);
-			expect(await response.json()).toEqual({
-				error: "CHALLENGE_SPECIFICATION_REQUIRED",
-			});
+			expect(response.status).toBe(202);
+			expect(await response.json()).toMatchObject({ verification: "UNVERIFIED", marks: null });
 			await reviewerTask;
 			reviewerTask = undefined;
 		}
@@ -383,247 +392,38 @@ it("rejects unconfigured PR identity mismatches before requesting a reviewer", a
 		env.DEFAULT_PR_REVIEWER = previousReviewer;
 	}
 });
-it("queues once, rejects conflicting replay, and supersedes on new head", async () => {
-	const first = await acceptMatrixPR(payload(), env, "delivery-1", "hash-1");
+it("keeps the two historical pilots read-only and rejects new PR intake", async () => {
+	const response = await acceptMatrixPR(payload(), env, "pilot-intake", "pilot-hash");
+	expect(response.status).toBe(403);
+	expect(await response.json()).toEqual({ error: "MATRIX_REPOSITORY_NOT_AUTHORIZED" });
+	expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM matrix_submissions").first("n")).toBe(0);
+	expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM matrix_runs").first("n")).toBe(0);
+	expect(jobs).toHaveLength(0);
+});
+it("deduplicates exact webhook delivery and retains the newest captured PR head", async () => {
+	const pr = (sha: string, date: string) => payload(sha, date, 1442222462, "180DC-VIT-CHENNAI/mazhai-cover");
+	const first = await acceptMatrixPR(pr("a".repeat(40), "2026-11-04T10:00:00Z"), env, "head-one", "hash-one", undefined, { publishCheck: async () => undefined });
 	expect(first.status).toBe(202);
-	const { id } = (await first.json()) as { id: string };
-	expect(jobs).toContain(id);
-	expect(
-		(await acceptMatrixPR(payload(), env, "delivery-1", "hash-1")).status,
-	).toBe(200);
-	expect(
-		(await acceptMatrixPR(payload(), env, "delivery-1", "different"))
-			.status,
-	).toBe(409);
-	await acceptMatrixPR(
-		payload("d".repeat(40), "2026-11-04T11:00:00Z"),
-		env,
-		"delivery-2",
-		"hash-2",
-	);
-	expect(
-		await env.DB.prepare("SELECT state FROM matrix_runs WHERE id=?")
-			.bind(id)
-			.first("state"),
-	).toBe("SUPERSEDED");
-	const before = jobs.length;
-	await acceptMatrixPR(
-		payload("b".repeat(40), "2026-11-04T09:00:00Z"),
-		env,
-		"delivery-3",
-		"hash-3",
-	);
-	expect(jobs).toHaveLength(before);
+	expect((await acceptMatrixPR(pr("a".repeat(40), "2026-11-04T10:00:00Z"), env, "head-one", "hash-one")).status).toBe(202);
+	expect((await acceptMatrixPR(pr("c".repeat(40), "2026-11-04T09:00:00Z"), env, "stale-head", "hash-stale", undefined, { publishCheck: async () => undefined })).status).toBe(202);
+	expect(await env.DB.prepare("SELECT head_sha FROM unverified_pr_submissions WHERE repository_id=1442222462 AND pr_number=4").first("head_sha")).toBe("a".repeat(40));
+	expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM matrix_runs").first("n")).toBe(0);
 });
-it("attributes the pull request to its verified GitHub member team", async () => {
-	const p = payload();
-	p.pull_request.number = 50;
-	const response = await acceptMatrixPR(
-		p,
-		env,
-		"team-attribution",
-		"team-attribution",
-	);
-	expect(response.status).toBe(202);
-	expect(
-		await env.DB.prepare(
-			"SELECT team_id,author_id,author_login,mapping_status FROM matrix_submissions WHERE repository_id=? AND pr_number=50",
-		)
-			.bind(1442222461)
-			.first(),
-	).toEqual({
-		team_id: "team-one",
-		author_id: 9001,
-		author_login: "member-one",
-		mapping_status: "MAPPED",
-	});
-});
-it("rejects unselected repositories or the wrong installation", async () => {
-	expect(
-		(
-			await acceptMatrixPR(
-				{ ...payload(), installation: { id: 999 } },
-				env,
-				"delivery-4",
-				"hash",
-			)
-		).status,
-	).toBe(403);
-});
-it("advances same-head timestamps to reject delayed different heads", async () => {
-	await acceptMatrixPR(
-		payload("e".repeat(40), "2026-11-04T12:00:00Z"),
-		env,
-		"order-1",
-		"o1",
-	);
-	await acceptMatrixPR(
-		payload("e".repeat(40), "2026-11-04T14:00:00Z"),
-		env,
-		"order-2",
-		"o2",
-	);
-	await acceptMatrixPR(
-		payload("f".repeat(40), "2026-11-04T13:00:00Z"),
-		env,
-		"order-3",
-		"o3",
-	);
-	expect(
-		await env.DB.prepare(
-			"SELECT head_sha FROM matrix_submissions WHERE pr_number=4",
-		).first("head_sha"),
-	).toBe("e".repeat(40));
-});
-it("retains a close-first tombstone against delayed opening events", async () => {
-	const p = payload();
-	p.pull_request.number = 8;
-	p.action = "closed";
-	p.pull_request.state = "closed";
-	await acceptMatrixPR(p, env, "close-first", "closed");
-	p.action = "opened";
-	p.pull_request.state = "open";
-	p.pull_request.updated_at = "2026-11-04T09:00:00Z";
-	const before = jobs.length;
-	await acceptMatrixPR(p, env, "open-late", "opened");
-	expect(jobs).toHaveLength(before);
-});
-it("resolves conflicting timestamp ties against the actual GitHub head", async () => {
-	const date = "2026-11-04T16:00:00Z";
-	await acceptMatrixPR(payload("1".repeat(40), date), env, "tie-first", "t1");
-	const live = async () => ({
-		head: { sha: "2".repeat(40) },
-		state: "open" as const,
-		updated_at: date,
-		user: { id: 9001, login: "member-one" },
-	});
-	await acceptMatrixPR(
-		payload("2".repeat(40), date),
-		env,
-		"tie-newer",
-		"t2",
-		live,
-	);
-	await acceptMatrixPR(
-		payload("1".repeat(40), date),
-		env,
-		"tie-delayed",
-		"t3",
-		live,
-	);
-	expect(
-		await env.DB.prepare(
-			"SELECT head_sha FROM matrix_submissions WHERE pr_number=4",
-		).first("head_sha"),
-	).toBe("2".repeat(40));
-});
-it("recovers a persisted queued dispatch after workflow creation fails", async () => {
-	const previous = env.MATRIX_EVALUATOR;
-	env.MATRIX_EVALUATOR = {
-		create: async () => {
-			throw new Error("temporary outage");
-		},
-		get: async () => ({
-			status: async () => {
-				throw new Error("not found");
-			},
-		}),
-	} as unknown as Env["MATRIX_EVALUATOR"];
-	const p = payload("3".repeat(40), "2026-11-04T17:00:00Z");
-	p.pull_request.number = 10;
-	await expect(
-		acceptMatrixPR(p, env, "recoverable", "recover"),
-	).rejects.toThrow("temporary outage");
-	expect(
-		await env.DB.prepare(
-			"SELECT state FROM matrix_runs WHERE pr_number=10",
-		).first("state"),
-	).toBe("QUEUED");
-	env.MATRIX_EVALUATOR = previous;
-	expect((await acceptMatrixPR(p, env, "recoverable", "recover")).status)
-		.toBe(
-			200,
-		);
-	const id = await env.DB.prepare(
-		"SELECT latest_run_id FROM matrix_submissions WHERE pr_number=10",
-	).first<string>("latest_run_id");
-	expect(jobs).toContain(id);
-});
-it("keeps fresh and retried runs unavailable to legacy score publication", async () => {
-	const p = payload("4".repeat(40), "2026-11-04T18:00:00Z");
-	p.pull_request.number = 11;
-	const response = await acceptMatrixPR(p, env, "notice-only", "notice");
-	const { id } = (await response.json()) as { id: string };
-	expect(
-		await env.DB.prepare(
-			"SELECT publication_status FROM matrix_runs WHERE id=?",
-		)
-			.bind(id)
-			.first("publication_status"),
-	).toBe("NOTICE_ONLY");
-	await env.DB.prepare("UPDATE matrix_runs SET state='COMPLETED' WHERE id=?")
-		.bind(id)
-		.run();
-	const retry = await matrixApi(
-		new Request(`https://test/api/matrix/runs/${id}/retry`, {
-			method: "POST",
-			headers: { authorization: "Bearer " + env.ADMIN_TOKEN },
-		}),
-		env,
-	);
-	expect(retry.status).toBe(202);
-	const next = (await retry.json()) as { id: string };
-	expect(
-		await env.DB.prepare(
-			"SELECT publication_status FROM matrix_runs WHERE id=?",
-		)
-			.bind(next.id)
-			.first("publication_status"),
-	).toBe("NOTICE_ONLY");
-});
-it("accepts ready_for_review without regrading an unchanged head", async () => {
-	const p = payload("5".repeat(40), "2026-11-04T19:00:00Z");
-	p.pull_request.number = 12;
-	const first = await acceptMatrixPR(
-		p,
-		env,
-		"draft-created",
-		"draft-created",
-	);
-	const { id } = (await first.json()) as { id: string };
-	await env.DB.prepare("UPDATE matrix_runs SET state='COMPLETED' WHERE id=?")
-		.bind(id)
-		.run();
-	const count = jobs.length;
-	p.action = "ready_for_review";
-	p.pull_request.updated_at = "2026-11-04T20:00:00Z";
-	const ready = await acceptMatrixPR(p, env, "draft-ready", "draft-ready");
-	expect(ready.status).toBe(200);
-	expect(jobs.length).toBe(count);
-	expect(
-		await env.DB.prepare(
-			"SELECT COUNT(*) AS n FROM matrix_runs WHERE pr_number=12",
-		).first("n"),
-	).toBe(1);
-});
-it("protects application budget accounting with bearer authentication", async () => {
-	const denied = await matrixApi(
-		new Request("https://matrix.test/api/matrix/budget"),
-		env,
-	);
-	expect(denied.status).toBe(401);
-	const response = await matrixApi(
-		new Request("https://matrix.test/api/matrix/budget", {
-			headers: { authorization: "Bearer " + env.ADMIN_TOKEN },
-		}),
-		env,
-	);
-	expect(response.status).toBe(200);
-	expect(await response.json()).toMatchObject({
-		startLimit: 80,
-		startsRemaining: 80,
-		secondsPerStart: 180,
-		globalConcurrencyLimit: 4,
-		accounting: "application_reservations_not_cloudflare_bill",
-	});
+it("denies retry and diagnostic execution without an approved profile", async () => {
+	const legacyId = "e".repeat(64);
+	await env.DB.prepare("INSERT INTO matrix_runs(id,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,state) VALUES(?,1442222461,'180DC-VIT-CHENNAI/noyyal-treasury',4,?,?,?,?,?,'COMPLETED')")
+		.bind(legacyId, "b".repeat(40), "a".repeat(40), "pilot-v1", "c".repeat(64), "registry.cloudflare.com/fixture/image@sha256:" + "1".repeat(64)).run();
+	const headers = { Authorization: `Bearer ${"x".repeat(40)}`, Origin: "https://test" };
+	const retry = await matrixApi(new Request("https://test/api/matrix/runs/" + legacyId + "/retry", { method: "POST", headers }), env);
+	expect(retry.status).toBe(403);
+	expect(await retry.json()).toEqual({ error: "MATRIX_REPOSITORY_NOT_AUTHORIZED" });
+	const diagnostic = await matrixApi(new Request("https://test/api/matrix/diagnostic", { method: "POST", headers, body: JSON.stringify({ repository: "noyyal-treasury", files: [] }) }), env);
+	expect(diagnostic.status).toBe(403);
+	const profileRunId = "f".repeat(64);
+	await env.DB.prepare("INSERT INTO matrix_runs(id,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,state) VALUES(?,1442222465,'180DC-VIT-CHENNAI/janus',4,?,?,?,?,?,'COMPLETED')")
+		.bind(profileRunId, "b".repeat(40), "a".repeat(40), "unapproved-v1", "d".repeat(64), "registry.cloudflare.com/fixture/image@sha256:" + "2".repeat(64)).run();
+	const unapprovedRetry = await matrixApi(new Request("https://test/api/matrix/runs/" + profileRunId + "/retry", { method: "POST", headers }), env);
+	expect(unapprovedRetry.status).toBe(409);
+	expect(await unapprovedRetry.json()).toEqual({ error: "MATRIX_PROFILE_NOT_APPROVED" });
+	expect(jobs).toHaveLength(0);
 });

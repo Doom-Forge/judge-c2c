@@ -163,6 +163,46 @@ test("authenticated judge opens assigned team evidence, saves, submits, and revi
 	await expect(sharingActions).toEqual([true, false]);
 });
 
+test("assigned judge explicitly finalizes one immutable team score after Engineering review", async ({ page }) => {
+	let official: { score: number; judgeIdentityId: string; reason: string; createdAt: string } | null = null;
+	let posted: Record<string, unknown> | null = null;
+	await page.route("**/api/organization/**", async route => {
+		const request = route.request();
+		const url = new URL(request.url());
+		if (url.pathname === "/api/organization/status") return route.fulfill({ json: judgeStatus() });
+		if (url.pathname === "/api/organization/round-two/teams") return route.fulfill({ json: { teams: [{ id: "team-alpha", name: "Alpha", submission_count: 1, document_count: 0 }], deadlines: null } });
+		if (url.pathname === "/api/organization/round-two/teams/team-alpha") return route.fulfill({ json: teamDetail() });
+		if (url.pathname === "/api/organization/round-two/reviews") return route.fulfill({ json: { currentDocument: null, rubric: null, rubricError: null, documentStale: false, draft: null, drafts: [], submissions: [] } });
+		if (url.pathname === "/api/organization/round-two/results/final-score" && request.method() === "GET") return route.fulfill({ json: {
+			team: { id: "team-alpha", name: "Alpha" },
+			manualReviews: { analysis: { reviewCount: 0, average: null }, engineering: { reviewCount: 1, average: 78 } },
+			machineEvidence: { status: "UNVERIFIED", marks: null, pullRequests: [{ repositoryId: 17, repository: "fixture/alpha", prNumber: 7, headSha: "abc123def456", authorLogin: "team-alpha", updatedAt: "2026-11-08T10:00:00Z", closed: false, evaluationStatus: "UNVERIFIED", marks: null, categories: [] }] },
+			finalScore: official, canFinalize: official === null,
+		} });
+		if (url.pathname === "/api/organization/round-two/results/final-score" && request.method() === "POST") {
+			posted = request.postDataJSON() as Record<string, unknown>;
+			const body = posted as { score: number; reason: string };
+			official = { score: body.score, reason: body.reason, judgeIdentityId: "judge-a", createdAt: "2026-11-08T12:00:00Z" };
+			return route.fulfill({ status: 201, json: { teamId: "team-alpha", finalScore: official } });
+		}
+		return route.fulfill({ status: 404, json: { error: "UNEXPECTED_ROUTE" } });
+	});
+	await page.goto("/workspace?teamId=team-alpha");
+	await expect(page.getByRole("heading", { name: "Official team score" })).toBeVisible();
+	await expect(page.getByText("UNVERIFIED", { exact: true }).first()).toBeVisible();
+	await expect(page.getByText("Manual Engineering", { exact: true })).toBeVisible();
+	const finalize = page.getByRole("button", { name: "Finalize official team score" });
+	await expect(finalize).toBeDisabled();
+	await page.getByRole("spinbutton", { name: "Official final score" }).fill("91.5");
+	await page.getByRole("textbox", { name: "Reason for official final" }).fill("After checking review and automated evidence.");
+	await page.getByLabel(/I confirm this is the team's official final mark/).check();
+	await expect(finalize).toBeEnabled();
+	await finalize.click();
+	await expect.poll(() => posted).toEqual({ teamId: "team-alpha", score: 91.5, reason: "After checking review and automated evidence." });
+	await expect(page.getByText("91.5 / 100", { exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Finalize official team score" })).toHaveCount(0);
+});
+
 test("signed-out users can sign in and empty judges do not see sample submissions", async ({
 	page,
 }) => {

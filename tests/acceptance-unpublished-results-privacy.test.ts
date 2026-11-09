@@ -56,7 +56,7 @@ beforeEach(async () => {
 		.run();
 	await db
 		.prepare(
-			'INSERT INTO round_two_result_snapshots(id,snapshot,created_by) VALUES(\'snapshot-private\',\'{"teams":1,"completed":1,"pending":0,"results":[{"teamName":"Secret Team","finalScore":99}]}\',\'organizer:test\')',
+			'INSERT INTO round_two_result_snapshots(id,snapshot,created_by) VALUES(\'snapshot-private\',\'{"teams":1,"completed":1,"pending":0,"results":[{"teamId":"team-a","teamName":"Secret Team","status":"READY","finalScore":99,"analysisAverage":88,"analysisJudgeCount":1,"engineeringAverage":90,"engineeringJudgeCount":1,"manualAggregateScore":89.8,"finalScoreBy":"judge-private","finalScoreReason":"Private organizer rationale","automatedEvidence":{"status":"UNVERIFIED","marks":null,"pullRequestCount":2}}],"ranking":[{"teamId":"team-a","teamName":"Secret Team","finalScore":99,"finalScoreBy":"judge-private","finalScoreReason":"Private organizer rationale","automatedEvidence":{"status":"UNVERIFIED","marks":null,"pullRequestCount":2},"rank":1}]}\',\'organizer:test\')',
 		)
 		.run();
 	env = {
@@ -123,5 +123,24 @@ describe("unpublished result privacy", () => {
 			200,
 			expect.stringContaining("Secret Team"),
 		]);
+	});
+
+	it("limits a published participant projection to released score and feedback fields", async () => {
+		await env.ORG_DB!.prepare("INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(1,'180DC-VIT-CHENNAI/mazhai-cover',0,'main')").run();
+		await env.ORG_DB!.prepare("INSERT INTO team_repositories(team_id,repository_id,actor) VALUES('team-a',1,'organizer:test')").run();
+		await env.ORG_DB!.prepare("UPDATE teams SET lead_email='lead@example.test',track_finalized=1 WHERE id='team-a'").run();
+		await env.ORG_DB!.prepare("INSERT INTO team_roster_members(id,team_id,hackathon_id,display_name,email) VALUES('lead-roster','team-a','initial','Team A lead','lead@example.test')").run();
+		await env.ORG_DB!.prepare("UPDATE console_identities SET team_roster_member_id='lead-roster',github_verified_at=CURRENT_TIMESTAMP WHERE id=?").bind(participantId).run();
+		await env.ORG_DB!.prepare("INSERT INTO round_two_result_publication(id,snapshot_id,updated_by,published_at) VALUES(1,'snapshot-private','organizer:test',CURRENT_TIMESTAMP)").run();
+		const participant = await organization(request("/api/organization/participant/results", `judge_organizer=${participantToken}`), env, ctx);
+		const body = await participant.json() as { results: Array<Record<string, unknown>>; ranking: Array<Record<string, unknown>> };
+		expect(participant.status).toBe(200);
+		expect(body.results[0]).toMatchObject({ teamId: "team-a", teamName: "Secret Team", finalScore: 99, analysisAverage: 88, engineeringAverage: 90 });
+		expect(body.results[0]).not.toHaveProperty("finalScoreBy");
+		expect(body.results[0]).not.toHaveProperty("finalScoreReason");
+		expect(body.results[0]).not.toHaveProperty("manualAggregateScore");
+		expect(body.results[0]).not.toHaveProperty("automatedEvidence");
+		expect(body.ranking[0]).not.toHaveProperty("finalScoreBy");
+		expect(body.ranking[0]).not.toHaveProperty("automatedEvidence");
 	});
 });

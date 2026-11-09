@@ -40,6 +40,13 @@ beforeEach(async () => {
 		"INSERT INTO console_identities(id,name,role,team_id,credential_hash) VALUES('participant-a','Team A','participant','team-a',? ),('organizer','Organizer','organizer',NULL,?)",
 	)
 		.bind("b".repeat(64), "c".repeat(64)).run();
+	await db.prepare("UPDATE teams SET hackathon_id='initial',status='ACTIVE',lead_email='lead@example.test' WHERE id='team-a'").run();
+	await db.prepare("UPDATE teams SET hackathon_id='initial',status='ACTIVE' WHERE id='team-b'").run();
+	await db.prepare("INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(10,'180DC-VIT-CHENNAI/mazhai-cover',0,'main')").run();
+	await db.prepare("INSERT INTO team_repositories(team_id,repository_id,actor) VALUES('team-a',10,'organizer:test')").run();
+	await db.prepare("UPDATE teams SET track_finalized=1 WHERE id='team-a'").run();
+	await db.prepare("INSERT INTO team_roster_members(id,team_id,hackathon_id,display_name,email) VALUES('lead-roster','team-a','initial','Team Lead','lead@example.test')").run();
+	await db.prepare("UPDATE console_identities SET team_roster_member_id='lead-roster',github_verified_at='2026-11-09' WHERE id='participant-a'").run();
 	await db.prepare(
 		"INSERT INTO console_identity_sessions(hash,identity_id,expires_at) VALUES(?,?,?),(?,?,?)",
 	)
@@ -135,7 +142,7 @@ describe("participant published results through the Worker fetch surface", () =>
 			{
 				published: true,
 				results: [snapshot.results[0]],
-				ranking: [snapshot.ranking[0]],
+			ranking: [{ teamId: "team-a", teamName: "Team A", finalScore: 82, rank: 1 }],
 			},
 		]);
 	});

@@ -59,6 +59,10 @@
       "binding": "ARENA_SERVICE",
       "service": "doomforge-arena",
     },
+    {
+      "binding": "TEAM_EMAIL_SENDER",
+      "service": "doombot-spacemail-sender",
+    },
   ],
   "workflows": [
     {

@@ -633,6 +633,58 @@
 .jw-score-sharing .jw-button {
   flex: 0 0 auto;
 }
+.jw-final-score {
+	margin-top: 20px;
+	border-color: #8ca69a;
+}
+.jw-final-score > header {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+}
+.jw-final-score > header h3 {
+	margin: 4px 0 6px;
+	font-size: 20px;
+}
+.jw-final-score-evidence {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 10px;
+	margin: 16px 0;
+}
+.jw-final-score-evidence > div,
+.jw-final-score-result,
+.jw-final-score-prs {
+	border: 1px solid var(--jw-border, #d5d8cf);
+	border-radius: 9px;
+	background: var(--jw-surface, #f5f4ed);
+	padding: 14px;
+}
+.jw-final-score-evidence > div { display: grid; gap: 4px; }
+.jw-final-score-evidence span,
+.jw-final-score-result > span { color: var(--jw-muted, #59635d); font-size: 12px; }
+.jw-final-score-evidence strong,
+.jw-final-score-result > strong { font-size: 18px; }
+.jw-final-score-evidence small,
+.jw-final-score-result small,
+.jw-final-score-prs small { color: var(--jw-muted, #59635d); font-size: 12px; }
+.jw-final-score-prs h4 { margin: 0 0 10px; }
+.jw-final-score-prs ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.jw-final-score-prs li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--jw-border, #d5d8cf); padding: 10px 0; }
+.jw-final-score-prs li > span:first-child { display: grid; gap: 3px; }
+.jw-final-score-form { display: grid; gap: 12px; margin-top: 16px; }
+.jw-final-score-form > label { display: grid; gap: 6px; font-size: 13px; font-weight: 650; }
+.jw-final-score-form > label span { color: var(--jw-muted, #59635d); font-weight: 400; }
+.jw-final-score-form input[type="number"],
+.jw-final-score-form textarea { width: 100%; min-height: 44px; border: 1px solid var(--jw-border, #cbd0c7); border-radius: 7px; background: #fffef8; padding: 10px 12px; color: inherit; }
+.jw-final-score-form textarea { resize: vertical; }
+.jw-final-score-form .jw-final-score-confirm { display: flex; align-items: flex-start; gap: 9px; font-weight: 500; }
+.jw-final-score-form .jw-final-score-confirm input { width: 18px; height: 18px; margin-top: 1px; accent-color: #315f53; }
+.jw-final-score-result { display: grid; gap: 8px; margin-top: 16px; }
+.jw-final-score-result p { margin: 0; }
+@media (max-width: 700px) {
+	.jw-final-score-evidence { grid-template-columns: 1fr; }
+}
 .jw-history-detail {
   padding: 0 0 10px;
   color: var(--jw-muted);

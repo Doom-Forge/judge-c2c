@@ -2,17 +2,16 @@
 
 ## Unstop team onboarding
 
-A committed Unstop import with a `team_lead_email` creates one shared 12-character team code and a pending lead-only invitation. The code is valid for seven days and can be used once per imported member email. D1 stores a SHA-256 code hash and a random per-team nonce; the code is deterministically derived with HMAC-SHA-256 under `ORG_VAULT_KEY`, and is never stored in plaintext. A scheduled dispatcher sends pending invitations only when `TEAM_EMAIL_SENDER` is bound. Without the binding, invitations remain pending. Invitation attempt logs contain only status and safe error codes.
+A committed Unstop import creates the team roster and lead email. A participant requests a one-time email sign-in code; it expires after ten minutes and D1 stores only its hash. The lead can sign in before choosing a repository, then must finalize exactly one of the four repositories and link a GitHub account before entering the dashboard. After those steps, the lead can reveal a shared team access key for rostered members. Members request their own email sign-in code using the key, then link their own GitHub accounts. The key is HMAC-derived under `ORG_VAULT_KEY`; D1 stores its hash and per-team nonce. Login and invitation logs keep only status and safe error codes.
 
-The unauthenticated same-origin endpoint `POST /api/organization/participant/verify` accepts an imported email and code. Successful verification creates an authenticated, team-scoped participant identity linked to the imported team member and GitHub ID. Inactive teams or members cannot authenticate, and each imported email can use the code once.
+The same-origin endpoints `POST /api/organization/participant/request-code` and `/verify` issue and consume the one-time email code. Team members also need the lead's access key. Authentication is scoped to the imported roster. GitHub identity is linked in a separate OAuth step and is required for dashboard access; imported CSV data is not treated as OAuth proof.
 
-After activation, participants can request a fresh email sign-in code. Each code
-is single-use, expires after ten minutes, and is stored as a hash. Email sign-in
-requires migration `0045_participant_email_login.sql` and the
-`TEAM_EMAIL_SENDER` binding. Participants can still use an already delivered
-team invitation code when the sender binding is unavailable.
+Email sign-in requires migration `0045_participant_email_login.sql` and the
+`TEAM_EMAIL_SENDER` binding. With no sender password provisioned, sign-in codes
+cannot currently be delivered; a team access key is not a substitute for email
+verification.
 
-SpaceMail is not configured in this checkout, so invitation dispatch remains dormant. When configured later, use the provider-neutral `TEAM_EMAIL_SENDER` binding and deploy a separate sender Worker. That sender Worker alone must read SpaceMail SMTP host, username, password, and TLS settings from its Cloudflare secrets; never put SMTP credentials in Doomforge vars, D1, or source. The sender must durably accept and deduplicate the stable invitation idempotency key before returning success.
+The SpaceMail mailbox is SMTP-enabled and the private sender Worker has been deployed. Its password has not been provisioned, and the new `TEAM_EMAIL_SENDER` binding is present in configuration but has not been activated by a Doomforge deployment. Email dispatch remains unavailable until the password is provisioned and Doomforge is deployed with the binding.
 
 ## Hourly team status email
 
@@ -35,23 +34,21 @@ the message is capped at 12,000 characters.
 
 ## Configure SpaceMail later
 
-The Round 2 specification uses the existing SpaceMail SMTP service, but this
-checkout does not contain SpaceMail credentials or a configured SMTP sender.
-No message can be sent until the owner provisions SpaceMail and configures the
-sender relay. When those are available:
+SpaceMail SMTP is enabled for `technical@180dcvitc.org`. The private sender Worker is deployed; the SMTP password is not in this checkout. No message can be sent from Doomforge until the operator provisions the secret and the main Worker is deployed with its service binding. When those steps are approved:
 
 1. Configure the SpaceMail SMTP account and verified sender address. Keep the
    SMTP host, username, password, and TLS settings out of Doomforge source,
    Wrangler vars, and D1.
-2. Deploy a separate sender Worker that reads the SpaceMail SMTP configuration
-   from its own secret bindings and implements `POST /send`.
+2. Provision `SPACEMAIL_SMTP_PASSWORD` to the existing private sender Worker
+   using the command in the sender section below.
 3. The sender request is JSON with `idempotencyKey`, `to`, `subject`, and
    plain-text `body`. Return success only after the sender has durably accepted
    the email. Persist the key in the sender service so retries after a sender
    acceptance or worker restart cannot produce a duplicate.
-4. Bind that Worker to Doomforge as `TEAM_EMAIL_SENDER` in the appropriate
-   Cloudflare environment. No provider-specific package or credential is
-   required in the Doomforge Worker.
+4. The `TEAM_EMAIL_SENDER` binding is prepared in `wrangler.matrix.jsonc`.
+   Deploy Doomforge only after the secret exists and the configuration is
+   verified. No provider-specific package or credential is required in the
+   Doomforge Worker.
 5. Apply migrations `0038_team_email.sql`, `0039_team_lead_email.sql`, and
    `0040_team_onboarding.sql` to the isolated organization database (`ORG_DB`),
    not the ordinary judging database. The Unstop CSV must include `team_lead_email`; conflicting lead
@@ -82,3 +79,19 @@ Preserve the delivery table during rollback so retries retain their keys.
 Keep the migrations applied; disabling email does not require a destructive
 schema rollback. After pausing, remove the sender binding and confirm GET
 reports delivery disabled and no sender configured.
+
+## Private SpaceMail sender Worker
+
+`wrangler.spacemail.jsonc` configures the deployed private Worker with no public route or Workers.dev hostname. It sends through implicit TLS to `mail.spacemail.com:465` as `technical@180dcvitc.org`. A `TEAM_EMAIL_SENDER` service binding is prepared in `wrangler.matrix.jsonc`; it is not active in the deployed Doomforge Worker until a later deployment.
+
+Provision the password as a Worker secret on the existing sender Worker:
+
+```sh
+npx wrangler secret put SPACEMAIL_SMTP_PASSWORD --config wrangler.spacemail.jsonc
+```
+
+Wrangler prompts for the value. Do not place it in a command argument, shell history, `.env` file, source, or chat. The only credential the sender reads is `SPACEMAIL_SMTP_PASSWORD`; the account and from address are fixed in code.
+
+The existing `/send` contract accepts JSON `{ idempotencyKey, to, subject, body }`. The sender hashes the key to select a Durable Object and stores only a hash of message content, a delivery state, and an attempt token. It does not persist email addresses, message text, or sign-in codes. The same key with changed content is rejected. SMTP waits are bounded to 30 seconds, request bodies to 20 KiB, and message text to 12,000 characters. Header injection is rejected. If SMTP acceptance is uncertain, the idempotency record becomes `UNKNOWN` and the sender will not automatically duplicate the message.
+
+This change does not provision its SMTP password, deploy the Doomforge binding, or send email.

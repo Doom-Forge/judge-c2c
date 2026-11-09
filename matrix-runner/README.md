@@ -102,6 +102,25 @@ data, storm and data-quality fixtures, test labels, and organizer-calibrated
 thresholds are still required. Proposed thresholds in the metric brief are not
 treated as frozen official scoring rules.
 
+### Local benchmark fixture bundle
+
+`challenge_benchmarks.py` generates a deterministic, versioned JSON fixture
+bundle for PricingPulse, Veera Footwear (the supplied Borrowed Audiences brief),
+and Mazhai Cover. It includes known-answer arithmetic, synthetic portfolio
+constraint cases, and synthetic Mazhai formula cases. Provenance names the
+source brief and sections; a SHA-256 digest covers the exact generated cases.
+
+```sh
+python3 matrix-runner/challenge_benchmarks.py --challenge all --pretty --verify-repeatability
+python3 matrix-runner/challenge_benchmarks.py --challenge pricingpulse --output /tmp/pricingpulse-fixtures.json
+python3 -m unittest discover -s matrix-runner/tests -p 'test_challenge_benchmarks.py' -v
+```
+
+The bundle is fixture/spec evidence only. It does not import participant code,
+claim official score weights, emit marks, or establish a participant's six
+category results. All category statuses remain `UNVERIFIED`; formula and
+constraint oracle evidence is explicitly scoped to synthetic fixtures.
+
 Run the deterministic checker tests with:
 
 ```sh

@@ -1,5 +1,6 @@
 import { providerConfigured, providerHasKey } from './external-review';
 import { acceptMatrixPR } from './matrix-service';
+import { activeCompetitionRepositories } from './matrix';
 import { selectReviewModel } from './review-routing';
 import {
   requireOrganizationActive,
@@ -46,7 +47,6 @@ import type { Env } from './env';
 import { paymentRetryDescriptions, paymentRetryPolicy } from './runner-policy';
 import { requestParticipantLoginCode, verifyParticipant } from './team-invitations';
 import { roundTwoAnnouncements } from './round-two-announcements';
-import { githubParticipantLogin } from './participant-github';
 
 export const permissions = {
   contents: 'read',
@@ -356,9 +356,14 @@ async function sync(env: Env) {
     if (batch.repositories.length < 100) break;
     if (page === 10) throw new Error('REPOSITORY_LIMIT');
   }
+  const activeRepositories = env.MATRIX_MODE === 'true'
+    ? repositories.filter((repository) =>
+        (activeCompetitionRepositories as readonly string[]).includes(repository.full_name),
+      )
+    : repositories;
   await env.ORG_DB!.batch([
     env.ORG_DB!.prepare('UPDATE github_repositories SET accessible=0'),
-    ...repositories.map((r) =>
+    ...activeRepositories.map((r) =>
       env
         .ORG_DB!.prepare(
           'INSERT INTO github_repositories(id,full_name,private,default_branch,accessible) VALUES(?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET full_name=excluded.full_name,private=excluded.private,default_branch=excluded.default_branch,accessible=1',
@@ -366,7 +371,7 @@ async function sync(env: Env) {
         .bind(r.id, r.full_name, Number(r.private), r.default_branch),
     ),
   ]);
-  return repositories.length;
+  return activeRepositories.length;
 }
 async function repo(env: Env, id: number) {
   const row = await env
@@ -602,13 +607,14 @@ export async function organization(
     } catch {
       return json({ error: 'INVALID_INPUT' }, 400);
     }
-    const parsed = z.object({ email: z.email().max(200) }).strict().safeParse(body);
+    const parsed = z.object({ email: z.email().max(200), teamKey: z.string().trim().max(40).optional() }).strict().safeParse(body);
     if (!parsed.success) return json({ error: 'INVALID_INPUT' }, 400);
     const result = await requestParticipantLoginCode(
       env,
       parsed.data.email,
       Date.now(),
       request.headers.get('cf-connecting-ip') ?? 'local',
+      parsed.data.teamKey,
     );
     if (result.status === 503) return json({ error: 'PARTICIPANT_EMAIL_UNAVAILABLE' }, 503);
     if (result.status === 429) return json({ error: 'VERIFICATION_RATE_LIMIT' }, 429);
@@ -631,6 +637,7 @@ export async function organization(
       .object({
         email: z.email().max(200),
         code: z.string().regex(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$/),
+        teamKey: z.string().trim().max(40).optional(),
       })
       .strict()
       .safeParse(body);
@@ -641,6 +648,7 @@ export async function organization(
       parsed.data.code,
       new Date().toISOString(),
       request.headers.get('cf-connecting-ip') ?? 'local',
+      parsed.data.teamKey,
     );
     if (result.status !== 200) {
       return json(
@@ -669,31 +677,7 @@ export async function organization(
     url.pathname === '/api/organization/participant/github-login' &&
     request.method === 'POST'
   ) {
-    if (request.headers.get('origin') !== origin) {
-      return json({ error: 'SAME_ORIGIN_REQUIRED' }, 403);
-    }
-    const result = await githubParticipantLogin(request, env);
-    if (result.status !== 200) {
-      const error = result.status === 401
-        ? 'GITHUB_SESSION_REQUIRED'
-        : result.status === 403
-          ? 'GITHUB_IDENTITY_NOT_LINKED'
-          : result.status === 404
-            ? 'GITHUB_PARTICIPANT_NOT_FOUND'
-            : result.status === 429
-              ? 'GITHUB_LOGIN_RATE_LIMIT'
-              : 'GITHUB_LINK_UNAVAILABLE';
-      return json({ error }, result.status);
-    }
-    return Response.json(
-      { authenticated: true, identity: result.identity },
-      {
-        headers: {
-          'set-cookie': cookie(result.token, origin),
-          'cache-control': 'no-store',
-        },
-      },
-    );
+    return json({ error: 'EMAIL_OTP_REQUIRED' }, 403);
   }
   if (url.pathname === '/webhooks/organization') {
     if (request.method !== 'POST') {
@@ -727,7 +711,10 @@ export async function organization(
         delivery,
         await digest(new TextDecoder().decode(body)),
         undefined,
-        { deferReviewer: (task) => ctx.waitUntil(task) },
+        {
+          deferReviewer: (task) => ctx.waitUntil(task),
+          deferPublication: (task) => ctx.waitUntil(task),
+        },
       );
     }
     if (event === 'installation' || event === 'installation_repositories') {
@@ -1389,7 +1376,9 @@ export async function organization(
     return json({
       repositories: (
         await env.ORG_DB.prepare(
-          'SELECT id,full_name,private,default_branch,accessible FROM github_repositories ORDER BY full_name',
+          env.MATRIX_MODE === 'true'
+            ? "SELECT id,full_name,private,default_branch,accessible FROM github_repositories WHERE full_name IN ('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus') ORDER BY full_name"
+            : 'SELECT id,full_name,private,default_branch,accessible FROM github_repositories ORDER BY full_name',
         ).all()
       ).results,
     });

@@ -42,6 +42,13 @@ async function inviteCode(env: Env, teamId: string, nonce: string) {
 		"",
 	);
 }
+export async function teamAccessKey(env: Env, teamId: string) {
+	const row = await env.ORG_DB!.prepare(
+		"SELECT c.nonce FROM team_invitation_codes c JOIN teams t ON t.id=c.team_id WHERE c.team_id=? AND t.track_finalized=1 AND (SELECT count(*) FROM team_repositories r WHERE r.team_id=t.id AND r.active=1)=1",
+	).bind(teamId).first<{ nonce: string }>();
+	if (!row) return null;
+	return inviteCode(env, teamId, row.nonce);
+}
 export async function onboardingStatements(
 	env: Env,
 	team: { id: string; leadEmail?: string },
@@ -86,7 +93,6 @@ export async function dispatchTeamInvitations(env: Env, now = Date.now()) {
 		).bind(now + 600_000, now, row.idempotency_key, now).run();
 		if (!claim.meta.changes) continue;
 		try {
-			const code = await inviteCode(env, row.team_id, row.nonce);
 			const response = await env.TEAM_EMAIL_SENDER.fetch(
 				new Request("https://team-email-sender.internal/send", {
 					method: "POST",
@@ -95,8 +101,7 @@ export async function dispatchTeamInvitations(env: Env, now = Date.now()) {
 						idempotencyKey: row.idempotency_key,
 						to: row.recipient,
 						subject: `Doomforge team sign-in for ${row.name}`,
-						body:
-							`Your shared team sign-in code is ${code}. It expires in 7 days and can be used once per imported member email.`,
+						body: `Your team is registered on Doomforge. Visit the dashboard and request a one-time sign-in code for this email address. The team access key will be shared by your verified team lead after repository selection.`,
 					}),
 				}),
 			);
@@ -117,6 +122,7 @@ export async function verifyParticipant(
 	code: string,
 	now = new Date().toISOString(),
 	bucketId = "test",
+	rawTeamKey?: string,
 ) {
 	const db = env.ORG_DB!;
 	const timestamp = Date.parse(now);
@@ -128,7 +134,7 @@ export async function verifyParticipant(
 	).bind(timestamp).run();
 	if (await overRateLimit(db, bucket, 10, timestamp + 60_000) || await overRateLimit(db, emailBucket, 10, timestamp + 60_000)) return { status: 429 as const };
 	const candidates = await db.prepare(
-		"SELECT roster.*,c.code_hash,c.expires_at FROM (SELECT t.id AS team_id,t.name AS team_name,m.id AS member_id,NULL AS roster_member_id,m.display_name,m.email,m.github_id,m.github_login FROM teams t JOIN team_members m ON m.team_id=t.id AND m.active=1 WHERE t.hackathon_id='initial' AND t.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM team_roster_members r WHERE r.linked_team_member_id=m.id AND r.active=1) UNION ALL SELECT t.id AS team_id,t.name AS team_name,r.linked_team_member_id AS member_id,r.id AS roster_member_id,COALESCE(m.display_name,r.display_name) AS display_name,r.email,m.github_id,m.github_login FROM teams t JOIN team_roster_members r ON r.team_id=t.id AND r.active=1 LEFT JOIN team_members m ON m.id=r.linked_team_member_id AND m.active=1 WHERE t.hackathon_id='initial' AND t.status='ACTIVE' AND (r.linked_team_member_id IS NULL OR m.active=1)) roster LEFT JOIN team_invitation_codes c ON c.team_id=roster.team_id WHERE lower(trim(roster.email))=?",
+		"SELECT roster.*,c.code_hash,c.nonce,c.expires_at,t.lead_email,t.track_finalized,(SELECT count(*) FROM team_repositories tr WHERE tr.team_id=t.id AND tr.active=1) AS selected_count FROM (SELECT t.id AS team_id,t.name AS team_name,m.id AS member_id,NULL AS roster_member_id,m.display_name,m.email,m.github_id,m.github_login FROM teams t JOIN team_members m ON m.team_id=t.id AND m.active=1 WHERE t.hackathon_id='initial' AND t.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM team_roster_members r WHERE r.linked_team_member_id=m.id AND r.active=1) UNION ALL SELECT t.id AS team_id,t.name AS team_name,r.linked_team_member_id AS member_id,r.id AS roster_member_id,COALESCE(m.display_name,r.display_name) AS display_name,r.email,m.github_id,m.github_login FROM teams t JOIN team_roster_members r ON r.team_id=t.id AND r.active=1 LEFT JOIN team_members m ON m.id=r.linked_team_member_id AND m.active=1 WHERE t.hackathon_id='initial' AND t.status='ACTIVE' AND (r.linked_team_member_id IS NULL OR m.active=1)) roster JOIN teams t ON t.id=roster.team_id LEFT JOIN team_invitation_codes c ON c.team_id=roster.team_id WHERE lower(trim(roster.email))=?",
 	).bind(email).all<{
 		team_id: string;
 		team_name: string;
@@ -139,7 +145,11 @@ export async function verifyParticipant(
 		github_id: number | null;
 		github_login: string | null;
 		code_hash: string | null;
+		nonce: string | null;
 		expires_at: number | null;
+		lead_email: string | null;
+		track_finalized: number;
+		selected_count: number;
 	}>();
 	for (const row of candidates.results) {
 		const codeHash = await digest(code);
@@ -147,11 +157,16 @@ export async function verifyParticipant(
 			"SELECT id FROM participant_email_login_codes WHERE email=? AND code_hash=? AND expires_at>? AND used_at IS NULL ORDER BY created_at DESC LIMIT 1",
 		).bind(email, codeHash, timestamp).first<{ id: string }>();
 		if (loginCode && candidates.results.length !== 1) return { status: 409 as const };
-		const invitationMatches = (row.expires_at ?? 0) > timestamp && row.code_hash !== null && constantTimeEqual(codeHash, row.code_hash);
-		if (!invitationMatches && !loginCode) continue;
+		const isTeamLead = row.lead_email?.trim().toLowerCase() === email;
+		if (!loginCode || (!isTeamLead && (row.track_finalized !== 1 || row.selected_count !== 1))) continue;
 		const already = await db.prepare(
 			"SELECT identity_id FROM team_invitation_uses WHERE team_id=? AND email=?",
 		).bind(row.team_id, email).first();
+		if (!isTeamLead) {
+			if (!rawTeamKey || !row.code_hash || !row.nonce) continue;
+			const teamKeyHash = await digest(rawTeamKey.trim().toUpperCase());
+			if (!constantTimeEqual(teamKeyHash, row.code_hash)) continue;
+		}
 		if (already && loginCode) {
 			const token = hex(crypto.getRandomValues(new Uint8Array(32)));
 			const useNonce = crypto.randomUUID();
@@ -175,7 +190,7 @@ export async function verifyParticipant(
 				 )`).bind(await digest(token), identity.id, timestamp + 28_800_000, loginCode.id, useNonce, row.team_id, email, identity.id, row.team_id, row.member_id, row.member_id, row.team_id, email, row.roster_member_id, row.roster_member_id, row.team_id, email),
 			]);
 			if (result[0]?.meta.changes && result[1]?.meta.changes) {
-				return { status: 200 as const, identityId: identity.id, token, participant: { teamId: row.team_id, teamName: row.team_name, displayName: row.display_name, email: row.email, githubLinked: row.github_id !== null, githubLogin: row.github_login } };
+				return { status: 200 as const, identityId: identity.id, token, participant: { teamId: row.team_id, teamName: row.team_name, displayName: row.display_name, email: row.email, isTeamLead, trackSelected: row.track_finalized === 1 && row.selected_count === 1, githubLinked: false, githubLogin: null } };
 			}
 			return { status: 409 as const };
 		}
@@ -184,7 +199,7 @@ export async function verifyParticipant(
 		const token = hex(crypto.getRandomValues(new Uint8Array(32)));
 		const sessionHash = await digest(token);
 		const identity = db.prepare(
-		"INSERT INTO console_identities(id,name,role,team_id,team_member_id,team_roster_member_id,credential_hash) SELECT ?,?,'participant',?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM team_invitation_uses WHERE team_id=? AND email=?) AND EXISTS(SELECT 1 FROM teams t LEFT JOIN team_invitation_codes c ON c.team_id=t.id WHERE t.id=? AND t.status='ACTIVE' AND t.hackathon_id='initial' AND ((c.code_hash=? AND c.expires_at>?) OR (? IS NOT NULL AND EXISTS(SELECT 1 FROM participant_email_login_codes p WHERE p.id=? AND p.email=? AND p.used_at IS NULL AND p.expires_at>?))) AND ((? IS NOT NULL AND EXISTS(SELECT 1 FROM team_members m WHERE m.id=? AND m.team_id=t.id AND m.active=1 AND lower(trim(m.email))=?)) OR (? IS NOT NULL AND EXISTS(SELECT 1 FROM team_roster_members r WHERE r.id=? AND r.team_id=t.id AND r.active=1 AND lower(trim(r.email))=?))) )",
+		"INSERT INTO console_identities(id,name,role,team_id,team_member_id,team_roster_member_id,credential_hash) SELECT ?,?,'participant',?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM team_invitation_uses WHERE team_id=? AND email=?) AND EXISTS(SELECT 1 FROM teams t WHERE t.id=? AND t.status='ACTIVE' AND t.hackathon_id='initial' AND EXISTS(SELECT 1 FROM participant_email_login_codes p WHERE p.id=? AND p.email=? AND p.used_at IS NULL AND p.expires_at>?) AND (?=1 OR (t.track_finalized=1 AND (SELECT count(*) FROM team_repositories tr WHERE tr.team_id=t.id AND tr.active=1)=1)) AND ((? IS NOT NULL AND EXISTS(SELECT 1 FROM team_members m WHERE m.id=? AND m.team_id=t.id AND m.active=1 AND lower(trim(m.email))=?)) OR (? IS NOT NULL AND EXISTS(SELECT 1 FROM team_roster_members r WHERE r.id=? AND r.team_id=t.id AND r.active=1 AND lower(trim(r.email))=?))) )",
 		).bind(
 			identityId,
 			row.display_name,
@@ -195,12 +210,10 @@ export async function verifyParticipant(
 			row.team_id,
 			email,
 			row.team_id,
-			row.code_hash,
-			timestamp,
-			loginCode?.id ?? null,
 			loginCode?.id ?? null,
 			email,
 			timestamp,
+			isTeamLead ? 1 : 0,
 			row.member_id,
 			row.member_id,
 			email,
@@ -242,8 +255,10 @@ export async function verifyParticipant(
 					teamName: row.team_name,
 					displayName: row.display_name,
 					email: row.email,
-					githubLinked: row.github_id !== null,
-					githubLogin: row.github_login,
+					isTeamLead,
+					trackSelected: row.track_finalized === 1 && row.selected_count === 1,
+					githubLinked: false,
+					githubLogin: null,
 				},
 			};
 		}
@@ -257,6 +272,7 @@ export async function requestParticipantLoginCode(
 	rawEmail: string,
 	now = Date.now(),
 	bucketId = "local",
+	rawTeamKey?: string,
 ) {
 	const db = env.ORG_DB;
 	if (!db || !env.TEAM_EMAIL_SENDER) return { status: 503 as const };
@@ -269,10 +285,14 @@ export async function requestParticipantLoginCode(
 	const emailLimited = await overRateLimit(db, emailBucket, 3, now + 900_000);
 	if (ipLimited || emailLimited) return { status: 429 as const };
 	const recipients = await db.prepare(
-		"SELECT members.team_id,t.name AS team_name FROM (SELECT t.id AS team_id,m.id AS participant_id FROM teams t JOIN team_members m ON m.team_id=t.id AND m.active=1 WHERE t.hackathon_id='initial' AND t.status='ACTIVE' AND lower(trim(m.email))=? AND NOT EXISTS(SELECT 1 FROM team_roster_members r WHERE r.linked_team_member_id=m.id AND r.active=1) UNION ALL SELECT t.id AS team_id,r.id AS participant_id FROM teams t JOIN team_roster_members r ON r.team_id=t.id AND r.active=1 LEFT JOIN team_members m ON m.id=r.linked_team_member_id AND m.active=1 WHERE t.hackathon_id='initial' AND t.status='ACTIVE' AND lower(trim(r.email))=? AND (r.linked_team_member_id IS NULL OR m.active=1)) members JOIN teams t ON t.id=members.team_id ORDER BY members.team_id,members.participant_id LIMIT 2",
-	).bind(email, email).all<{ team_id: string; team_name: string }>();
+		"SELECT members.team_id,t.name AS team_name,t.lead_email,t.track_finalized,(SELECT count(*) FROM team_repositories tr WHERE tr.team_id=t.id AND tr.active=1) AS selected_count,c.code_hash,(SELECT identity_id FROM team_invitation_uses u WHERE u.team_id=t.id AND u.email=members.email) AS existing_identity FROM (SELECT t.id AS team_id,m.id AS participant_id,lower(trim(m.email)) AS email FROM teams t JOIN team_members m ON m.team_id=t.id AND m.active=1 WHERE t.hackathon_id='initial' AND t.status='ACTIVE' AND lower(trim(m.email))=? AND NOT EXISTS(SELECT 1 FROM team_roster_members r WHERE r.linked_team_member_id=m.id AND r.active=1) UNION ALL SELECT t.id AS team_id,r.id AS participant_id,lower(trim(r.email)) AS email FROM teams t JOIN team_roster_members r ON r.team_id=t.id AND r.active=1 LEFT JOIN team_members m ON m.id=r.linked_team_member_id AND m.active=1 WHERE t.hackathon_id='initial' AND t.status='ACTIVE' AND lower(trim(r.email))=? AND (r.linked_team_member_id IS NULL OR m.active=1)) members JOIN teams t ON t.id=members.team_id LEFT JOIN team_invitation_codes c ON c.team_id=t.id ORDER BY members.team_id,members.participant_id LIMIT 2",
+	).bind(email, email).all<{ team_id: string; team_name: string; lead_email: string | null; track_finalized: number; selected_count: number; code_hash: string | null; existing_identity: string | null }>();
 	if (recipients.results.length !== 1) return { status: 202 as const };
 	const recipient = recipients.results[0]!;
+	const isLead = recipient.lead_email?.trim().toLowerCase() === email;
+	if (!isLead) {
+		if (recipient.track_finalized !== 1 || recipient.selected_count !== 1 || !rawTeamKey || !recipient.code_hash || !constantTimeEqual(await digest(rawTeamKey.trim().toUpperCase()), recipient.code_hash)) return { status: 202 as const };
+	}
 	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 	const code = Array.from(crypto.getRandomValues(new Uint8Array(12)), byte => alphabet[byte & 31]).join("");
 	const id = crypto.randomUUID();

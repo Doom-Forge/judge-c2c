@@ -20,7 +20,6 @@ import {
 import { ApiError } from "@/lib/api";
 import "./results.css";
 import {
-	calculateDisplayedFinalScore,
 	displayedStageScore,
 	type ResultTransition,
 	transitionConfirmation,
@@ -35,6 +34,8 @@ export type TeamResult = {
 	analysisJudgeCount: number;
 	engineeringAverage: number | null;
 	engineeringJudgeCount: number;
+	manualAggregateScore?: number | null;
+	automatedEvidence?: { status: string; marks: number | null; pullRequestCount?: number };
 	status: "READY" | "PENDING";
 	finalScore: number | null;
 	rank?: number;
@@ -328,9 +329,9 @@ export function OrganizerResults() {
 									</Badge>
 								</div>
 								<CardDescription>
-									Analysis contributes 10%; pull-request
-									evaluation contributes 90%. Incomplete teams
-									remain pending.
+									Analysis, Engineering, and Cloudflare evidence are
+									shown separately. A team remains pending until an
+									assigned judge explicitly records its official mark.
 								</CardDescription>
 							</div>
 							<label className="results-track-filter">
@@ -354,19 +355,16 @@ export function OrganizerResults() {
 										<th>RANK</th>
 										<th>TEAM</th>
 										<th>TRACK</th>
-										<th>ANALYSIS · 10%</th>
-										<th>PULL REQUEST · 90%</th>
-										<th>FINAL SCORE</th>
+										<th>ANALYSIS REVIEWS</th>
+										<th>ENGINEERING REVIEWS</th>
+										<th>CLOUDFLARE EVIDENCE</th>
+										<th>REVIEW AGGREGATE · REFERENCE</th>
+										<th>OFFICIAL FINAL SCORE</th>
 										<th>STATUS</th>
 									</tr>
 								</thead>
 								<tbody>
 									{rows.map((team, index) => {
-										const final =
-											calculateDisplayedFinalScore(
-												team.analysisAverage,
-												team.engineeringAverage,
-											);
 										return (
 											<tr key={team.teamId}>
 												<td className="results-rank">
@@ -427,10 +425,18 @@ export function OrganizerResults() {
 															: "s"}
 													</small>
 												</td>
+												<td>
+													<strong>{team.automatedEvidence?.status ?? "UNVERIFIED"}</strong>
+													<small>{team.automatedEvidence?.pullRequestCount ?? 0} pull request{team.automatedEvidence?.pullRequestCount === 1 ? "" : "s"} · marks unavailable</small>
+												</td>
+												<td>
+													{formatScore(team.manualAggregateScore ?? null)}
+													<small>Reference only · not a final mark</small>
+												</td>
 												<td className="results-final">
-													{final === null
+													{team.finalScore === null
 														? "Pending"
-														: final.toFixed(1)}
+														: team.finalScore.toFixed(1)}
 												</td>
 												<td>
 													<Badge
@@ -456,16 +462,8 @@ export function OrganizerResults() {
 							)}
 						</CardContent>
 						<div className="results-weight-note">
-							<span>
-								<strong>10%</strong> Analysis document
-							</span>
-							<span>
-								<strong>90%</strong> Pull-request review
-							</span>
-							<span>
-								0 is a valid score; “Pending” means no score was
-								submitted.
-							</span>
+							<span>Automated Cloudflare evidence is reported separately and stays unverified until approved scoring profiles are configured.</span>
+							<span>Only the assigned judge's explicit score is an official final mark. A value of 0 is valid.</span>
 						</div>
 					</Card>
 					<Card className="results-controls">

@@ -2,8 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("authenticated participant sees live options, deadlines, and released results only", async ({ page }) => {
 	let resultsUnavailable = true;
-	let selectedTrack: { repositoryId: number; fullName: string } | null = null;
-	let savedRepositoryId: number | null = null;
+	const selectedTrack = { repositoryId: 10, fullName: "180DC-VIT-CHENNAI/mazhai-cover" };
 	await page.route("**/api/organization/status", (route) =>
 		route.fulfill({
 			contentType: "application/json",
@@ -20,12 +19,8 @@ test("authenticated participant sees live options, deadlines, and released resul
 		}));
 	await page.route("**/api/organization/participant**", (route) => {
 		const path = new URL(route.request().url()).pathname;
-		if (path.endsWith("/track") && route.request().method() === "POST") {
-			const body = route.request().postDataJSON() as { repositoryId: number };
-			savedRepositoryId = body.repositoryId;
-			selectedTrack = repositories.find(repo => repo.repositoryId === body.repositoryId) ?? null;
-			return route.fulfill({ json: { track: selectedTrack } });
-		}
+		if (path.endsWith("/status")) return route.fulfill({ json: { isTeamLead: true, trackSelected: true, githubLinked: true, canEnterDashboard: true } });
+		if (path.endsWith("/team-key")) return route.fulfill({ json: { teamKey: "TEAM-KEY-123" } });
 		if (path.endsWith("/results")) {
 			if (!resultsUnavailable) {
 				return route.fulfill({
@@ -78,22 +73,13 @@ test("authenticated participant sees live options, deadlines, and released resul
 	});
 	await page.route("**/api/organization/announcements", route => route.fulfill({ json: { announcements: [{ id: "announcement-1", title: "Round 2 is open", body: "Submit your analysis document by the listed deadline.", createdAt: "2026-11-01T12:00:00.000Z" }] } }));
 	await page.goto("/");
+	await expect(page.getByRole("heading", { name: "Welcome, Team A" })).toBeVisible();
+	await expect(page.getByRole("link", { name: "180DC-VIT-CHENNAI/mazhai-cover" })).toHaveAttribute("href", "https://github.com/180DC-VIT-CHENNAI/mazhai-cover");
+	await expect(page.getByRole("button", { name: /Confirm team repository/ })).toHaveCount(0);
+	await page.getByRole("button", { name: "Reveal team key" }).click();
+	await expect(page.getByText("TEAM-KEY-123")).toBeVisible();
 	await page.getByRole("link", { name: "My submission" }).click();
-
 	await expect(page.getByRole("heading", { name: "My submission" })).toBeVisible();
-	for (const name of ["Mazhai Cover", "PricingPulse", "Veera Footwear", "JANUS"]) {
-		await expect(page.getByRole("button", { name: new RegExp(name) })).toBeVisible();
-		await expect(page.getByRole("link", { name: `${name} GitHub repository` })).toHaveAttribute("href", /^https:\/\/github\.com\/180DC-VIT-CHENNAI\//);
-	}
-	const confirmRepository = page.getByRole("button", { name: "Confirm repository" });
-	await expect(confirmRepository).toBeDisabled();
-	await page.getByRole("button", { name: /PricingPulse/ }).focus();
-	await page.keyboard.press("Enter");
-	await expect(page.getByRole("button", { name: /PricingPulse/ })).toHaveAttribute("aria-pressed", "true");
-	await expect(confirmRepository).toBeEnabled();
-	await confirmRepository.click();
-	await expect.poll(() => savedRepositoryId).toBe(11);
-	await expect(page.getByRole("button", { name: /PricingPulse/ })).toContainText("Current");
 	await expect(page.getByText("12/1/2026", { exact: false })).toBeVisible();
 	await expect(page.getByRole("link", { name: /mazhai-cover #42/ })).toHaveAttribute("href", "https://github.com/180DC-VIT-CHENNAI/mazhai-cover/pull/42");
 	await expect(page.getByRole("heading", { name: "Team members" })).toHaveCount(0);
@@ -122,3 +108,34 @@ const repositories = [
 	{ repositoryId: 12, fullName: "180DC-VIT-CHENNAI/veera-footwear" },
 	{ repositoryId: 13, fullName: "180DC-VIT-CHENNAI/janus" },
 ];
+
+test("team lead must confirm one repository before linking GitHub or entering workspace", async ({ page }) => {
+	let selectedTrack: { repositoryId: number; fullName: string } | null = null;
+	let documentRequests = 0;
+	await page.route("**/api/organization/status", route => route.fulfill({ json: {
+		authenticated: true, role: "participant", identity: { id: "lead-a", name: "Team A", role: "participant", teamId: "team-a" },
+	} }));
+	await page.route("**/api/organization/participant**", route => {
+		const path = new URL(route.request().url()).pathname;
+		if (path.endsWith("/status")) return route.fulfill({ json: { isTeamLead: true, trackSelected: Boolean(selectedTrack), githubLinked: false, canEnterDashboard: false } });
+		if (path.endsWith("/track-options")) return route.fulfill({ json: { isTeamLead: true, repositories } });
+		if (path.endsWith("/track") && route.request().method() === "POST") {
+			const repositoryId = (route.request().postDataJSON() as { repositoryId: number }).repositoryId;
+			selectedTrack = repositories.find(repo => repo.repositoryId === repositoryId) ?? null;
+			return route.fulfill({ json: { track: selectedTrack } });
+		}
+		if (path.endsWith("/documents")) { documentRequests += 1; return route.fulfill({ json: { documents: [], deadlines: null } }); }
+		return route.fulfill({ json: { team: { id: "team-a", name: "Team A", status: "ACTIVE" }, track: selectedTrack, currentMember: { displayName: "Lead", email: "lead@example.test", githubLogin: null, githubLinked: false }, githubLinked: false } });
+	});
+	await page.route("**/api/organization/announcements", route => route.fulfill({ json: { announcements: [] } }));
+	await page.goto("/");
+	await expect(page.getByRole("heading", { name: "Set up Team A" })).toBeVisible();
+	for (const name of ["Mazhai Cover", "PricingPulse", "Veera Footwear", "JANUS"]) await expect(page.getByRole("button", { name: new RegExp(name) })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Confirm team repository" })).toBeDisabled();
+	await page.getByRole("button", { name: /PricingPulse/ }).focus();
+	await page.keyboard.press("Enter");
+	await page.getByRole("button", { name: "Confirm team repository" }).click();
+	await expect(page.getByRole("heading", { name: "Verify your GitHub account" })).toBeVisible();
+	await expect(page.getByLabel("GitHub username")).toBeVisible();
+	await expect.poll(() => documentRequests).toBe(0);
+});

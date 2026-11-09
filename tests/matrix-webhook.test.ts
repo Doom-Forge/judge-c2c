@@ -59,21 +59,25 @@ beforeAll(async () => {
 			"registry.cloudflare.com/test/image@sha256:" + "1".repeat(64),
 		)
 		.run();
+	await db
+		.prepare("INSERT INTO github_repositories VALUES(1442222462,'180DC-VIT-CHENNAI/mazhai-cover',0,'main',1)")
+		.run();
 }, 30000);
 afterAll(async () => mf.dispose());
-async function request(valid = true, event = "pull_request") {
+async function request(
+	valid = true,
+	event = "pull_request",
+	repository = { id: 1442222462, full_name: "180DC-VIT-CHENNAI/mazhai-cover" },
+) {
 	const body = JSON.stringify({
 		action: "opened",
 		installation: { id: 42 },
-		repository: {
-			id: 1442222461,
-			full_name: "180DC-VIT-CHENNAI/noyyal-treasury",
-		},
+		repository,
 		pull_request: {
 			number: 12,
 			user: { id: 9001, login: "member-one" },
 			head: { sha: "b".repeat(40) },
-			base: { repo: { id: 1442222461 } },
+			base: { repo: { id: repository.id } },
 			updated_at: "2026-11-04T10:00:00Z",
 			state: "open",
 		},
@@ -105,14 +109,23 @@ it("rejects an invalid signature before any matrix job is queued", async () => {
 	);
 	expect(jobs).toHaveLength(0);
 });
-it("routes signed selected-repository PRs through matrix judging without legacy assignments", async () => {
+it("accepts signed four-repository PRs as unverified evidence without running a matrix", async () => {
 	expect((await organization(await request(), env, ctx)).status).toBe(202);
-	expect(jobs).toHaveLength(1);
+	expect(jobs).toHaveLength(0);
 	expect(
-		await env.DB.prepare("SELECT count(*) AS n FROM assignments").first(
+		await env.DB.prepare("SELECT count(*) AS n FROM unverified_pr_submissions").first(
 			"n",
 		),
-	).toBe(0);
+	).toBe(1);
+	expect(await env.DB.prepare("SELECT count(*) AS n FROM matrix_runs").first("n")).toBe(0);
+	const oldPilot = await organization(await request(true, "pull_request", {
+		id: 1442222461,
+		full_name: "180DC-VIT-CHENNAI/noyyal-treasury",
+	}), env, ctx);
+	expect(oldPilot.status).toBe(403);
+	expect(await oldPilot.json()).toEqual({ error: "MATRIX_REPOSITORY_NOT_AUTHORIZED" });
+	expect(jobs).toHaveLength(0);
+	expect(await env.DB.prepare("SELECT count(*) AS n FROM assignments").first("n")).toBe(0);
 });
 it("ignores issue events instead of dispatching the legacy evaluation system", async () => {
 	const before = jobs.length;

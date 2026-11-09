@@ -36,6 +36,13 @@ async function finalReview(id: string, revision: number, score: number) {
 	).bind(id, revision, score).run();
 }
 
+async function finalizeTeamScore() {
+	const response = await roundTwoResults(request("/api/organization/round-two/results/final-score", "POST", {
+		teamId: "team-a", score: 80, reason: "Final mark after reviewing submitted evidence.",
+	}), env, { hash: "judge-session", role: "judge", identity_id: "judge-a", name: "Judge A", team_id: null });
+	if (response.status !== 201) throw new Error(`Final score fixture failed: ${await response.text()}`);
+}
+
 beforeEach(async () => {
 	mf = new Miniflare({
 		modules: true,
@@ -51,6 +58,7 @@ beforeEach(async () => {
 	await db.prepare(
 		"INSERT INTO console_identities(id,name,role,credential_hash) VALUES('judge-a','Judge A','judge',?)",
 	).bind("a".repeat(64)).run();
+	await db.prepare("INSERT INTO round_two_judge_assignments(id,judge_identity_id,team_id,assigned_by) VALUES('assignment-a','judge-a','team-a','organizer:test')").run();
 	env = { ORG_DB: db } as unknown as Env;
 	await finalReview("review-1", 1, 80);
 });
@@ -61,6 +69,8 @@ afterEach(async () => {
 
 describe("round two snapshot CSV export", () => {
 	it("exports persisted snapshot scores after reviews change and denies non-organizers", async () => {
+		await env.ORG_DB!.prepare("INSERT INTO round_two_review_submissions(id,team_id,judge_identity_id,stage,revision,score,payload,document_id,reason) VALUES('engineering-review','team-a','judge-a','ENGINEERING',1,80,'{}',NULL,'Initial Engineering review')").run();
+		await finalizeTeamScore();
 		const created = await roundTwoReview(
 			request("/api/organization/round-two/results/snapshots", "POST", {
 				reason: "Freeze scores before later review edits.",

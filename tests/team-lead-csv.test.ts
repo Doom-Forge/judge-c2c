@@ -180,6 +180,13 @@ describe('Unstop team lead import', () => {
         github_login: null,
         lead_email: 'lead@example.test',
       },
+      {
+        display_name: 'Team Lead',
+        email: 'lead@example.test',
+        github_id: null,
+        github_login: null,
+        lead_email: 'lead@example.test',
+      },
     ]);
     expect(repositories?.count).toBe(0);
   });

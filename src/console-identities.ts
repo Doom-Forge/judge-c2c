@@ -5,6 +5,7 @@ import { requirementOutcomes } from "./requirement-assessment";
 import { participantDocuments } from "./round-two-documents";
 import { arenaGithubIdentity } from "./participant-github";
 import { participantSharedScores } from "./round-two-score-sharing";
+import { teamAccessKey } from "./team-invitations";
 import type { Env } from "./env";
 export type ConsoleRole = "organizer" | "judge" | "security" | "participant";
 export type ConsoleSession = {
@@ -184,6 +185,32 @@ export async function participantConsole(
 			"/api/organization/participant",
 			"",
 		);
+	const onboarding = session.identity_id
+		? await db.prepare(
+			"SELECT t.lead_email,COALESCE(m.email,r.email) AS email,t.track_finalized,(SELECT count(*) FROM team_repositories tr WHERE tr.team_id=t.id AND tr.active=1) AS selected_count,i.github_verified_at FROM console_identities i JOIN teams t ON t.id=i.team_id LEFT JOIN team_roster_members r ON r.id=i.team_roster_member_id AND r.active=1 LEFT JOIN team_members m ON m.id=COALESCE(i.team_member_id,r.linked_team_member_id) AND m.active=1 WHERE i.id=? AND i.role='participant' AND i.team_id=? AND i.revoked_at IS NULL AND t.status='ACTIVE' AND t.hackathon_id='initial'",
+		).bind(session.identity_id, session.team_id).first<{
+			lead_email: string | null;
+			email: string | null;
+			track_finalized: number;
+			selected_count: number;
+			github_verified_at: string | null;
+		}>()
+		: null;
+	if (!onboarding) return json({ error: "TEAM_MEMBER_REQUIRED" }, 409);
+	const isTeamLead = !!onboarding.lead_email && onboarding.email?.trim().toLowerCase() === onboarding.lead_email.trim().toLowerCase();
+	const trackSelected = onboarding.track_finalized === 1 && onboarding.selected_count === 1;
+	const githubLinked = !!onboarding.github_verified_at;
+	if (path === "/status" && request.method === "GET") {
+		return json({ isTeamLead, trackSelected, githubLinked, canEnterDashboard: trackSelected && githubLinked });
+	}
+	if (path === "/team-key" && request.method === "GET") {
+		if (!isTeamLead || !trackSelected || !githubLinked) return json({ error: "TEAM_LEAD_ONBOARDING_REQUIRED" }, 403);
+		const key = await teamAccessKey(env, session.team_id);
+		return key ? json({ teamKey: key }) : json({ error: "TEAM_KEY_UNAVAILABLE" }, 503);
+	}
+	const onboardingRoutes = path === "/status" || path === "/github/link" || path === "/track-options" || (path === "/track" && request.method === "POST");
+	if (path === "/track" && request.method === "POST" && !isTeamLead) return json({ error: "TEAM_LEAD_REQUIRED" }, 403);
+	if (!onboardingRoutes && (!trackSelected || !githubLinked)) return json({ error: "PARTICIPANT_ONBOARDING_REQUIRED" }, 428);
 	if (path === "/documents" || path.startsWith("/documents/")) {
 		return participantDocuments(request, env, session);
 	}
@@ -244,6 +271,7 @@ export async function participantConsole(
 						.bind(member.team_id, actor, JSON.stringify({ githubId: linked.identity.id, githubLogin: linked.identity.login })),
 				]);
 			}
+			await db.prepare("UPDATE console_identities SET github_verified_at=COALESCE(github_verified_at,CURRENT_TIMESTAMP) WHERE id=? AND team_id=?").bind(session.identity_id, member.team_id).run();
 			return json({ linked: true, github: { login: linked.identity.login }, unchanged: true });
 		}
 		const actor = "participant:" + session.identity_id;
@@ -301,13 +329,16 @@ export async function participantConsole(
 				.bind(session.identity_id, member.team_id)
 				.first<{ github_id: number | null; github_login: string | null }>();
 			if (current?.github_id === linked.identity.id) {
+				await db.prepare("UPDATE console_identities SET github_verified_at=COALESCE(github_verified_at,CURRENT_TIMESTAMP) WHERE id=? AND team_id=?").bind(session.identity_id, member.team_id).run();
 				return json({ linked: true, github: { login: current.github_login ?? linked.identity.login }, unchanged: true });
 			}
 			return json({ error: "GITHUB_IDENTITY_ALREADY_ASSIGNED" }, 409);
 		}
+		await db.prepare("UPDATE console_identities SET github_verified_at=CURRENT_TIMESTAMP WHERE id=? AND team_id=? AND role='participant' AND EXISTS(SELECT 1 FROM team_members m WHERE m.team_id=? AND m.github_id=? AND m.active=1)").bind(session.identity_id, member.team_id, member.team_id, linked.identity.id).run();
 		return json({ linked: true, github: { login: linked.identity.login } });
 	}
 	if (path === "/track" && request.method === "POST") {
+		if (!isTeamLead) return json({ error: "TEAM_LEAD_REQUIRED" }, 403);
 		let repositoryId: number;
 		try {
 			repositoryId = z
@@ -323,94 +354,34 @@ export async function participantConsole(
 		} catch {
 			return json({ error: "INVALID_INPUT" }, 400);
 		}
-		const actor = "participant:" + (session.identity_id ?? session.hash);
+		const requested = await db.prepare(
+			"SELECT id,full_name FROM github_repositories WHERE id=? AND accessible=1 AND full_name IN('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus')",
+		).bind(repositoryId).first<{ id: number; full_name: string }>();
+		if (!requested) return json({ error: "TRACK_NOT_ALLOWED" }, 403);
+		const current = await db.prepare(
+			"SELECT t.track_finalized,r.id AS repository_id,r.full_name FROM teams t LEFT JOIN team_repositories tr ON tr.team_id=t.id AND tr.active=1 LEFT JOIN github_repositories r ON r.id=tr.repository_id WHERE t.id=? AND t.hackathon_id='initial' AND t.status='ACTIVE'",
+		).bind(session.team_id).first<{ track_finalized: number; repository_id: number | null; full_name: string | null }>();
+		if (!current) return json({ error: "UNAUTHORIZED" }, 401);
+		if (current.track_finalized === 1) {
+			return current.repository_id === requested.id
+				? json({ track: { repositoryId: requested.id, fullName: requested.full_name }, unchanged: true })
+				: json({ error: "TRACK_FINALIZED" }, 409);
+		}
+		const actor = "participant:" + session.identity_id;
 		const eventId = crypto.randomUUID();
-		const updated = await db.batch([
-			db
-				.prepare(
-					"SELECT r.id,r.full_name,EXISTS(SELECT 1 FROM teams WHERE id=? AND hackathon_id='initial' AND status='ACTIVE') AS team_active,((SELECT COUNT(*) FROM team_repositories WHERE team_id=? AND active=1)<>1 OR NOT EXISTS(SELECT 1 FROM team_repositories WHERE team_id=? AND repository_id=r.id AND active=1)) AS selection_needed,(EXISTS(SELECT 1 FROM round_two_review_drafts d WHERE d.team_id=? AND d.stage='ENGINEERING') OR EXISTS(SELECT 1 FROM round_two_review_submissions s WHERE s.team_id=? AND s.stage='ENGINEERING')) AS engineering_locked FROM github_repositories r WHERE r.id=? AND r.accessible=1 AND r.full_name IN('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus')",
-				)
-				.bind(
-					session.team_id,
-					session.team_id,
-					session.team_id,
-					session.team_id,
-					session.team_id,
-					repositoryId,
-				),
-			db
-				.prepare(
-					"INSERT INTO audit(action,entity,actor,changes) SELECT 'team.track_selected',?,?,json_object('eventId',?,'previousRepositoryIds',json(COALESCE((SELECT json_group_array(repository_id) FROM (SELECT repository_id FROM team_repositories WHERE team_id=? AND active=1 ORDER BY repository_id)),'[]')),'repositoryId',r.id,'fullName',r.full_name) FROM github_repositories r WHERE r.id=? AND r.accessible=1 AND r.full_name IN('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus') AND EXISTS(SELECT 1 FROM teams WHERE id=? AND hackathon_id='initial' AND status='ACTIVE') AND ((SELECT COUNT(*) FROM team_repositories WHERE team_id=? AND active=1)<>1 OR NOT EXISTS(SELECT 1 FROM team_repositories WHERE team_id=? AND repository_id=r.id AND active=1)) AND NOT EXISTS(SELECT 1 FROM round_two_review_drafts d WHERE d.team_id=? AND d.stage='ENGINEERING') AND NOT EXISTS(SELECT 1 FROM round_two_review_submissions s WHERE s.team_id=? AND s.stage='ENGINEERING')",
-				)
-				.bind(
-					session.team_id,
-					actor,
-					eventId,
-					session.team_id,
-					repositoryId,
-					session.team_id,
-					session.team_id,
-					session.team_id,
-						session.team_id,
-						session.team_id,
-				),
-			db
-				.prepare(
-					"UPDATE team_repositories SET active=0,actor=?,assigned_at=CURRENT_TIMESTAMP WHERE team_id=? AND active=1 AND EXISTS(SELECT 1 FROM github_repositories WHERE id=? AND accessible=1 AND full_name IN('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus')) AND EXISTS(SELECT 1 FROM teams WHERE id=? AND hackathon_id='initial' AND status='ACTIVE') AND ((SELECT COUNT(*) FROM team_repositories WHERE team_id=? AND active=1)<>1 OR NOT EXISTS(SELECT 1 FROM team_repositories WHERE team_id=? AND repository_id=? AND active=1)) AND EXISTS(SELECT 1 FROM audit WHERE action='team.track_selected' AND entity=? AND actor=? AND json_extract(changes,'$.eventId')=?)",
-				)
-				.bind(
-					actor,
-					session.team_id,
-					repositoryId,
-					session.team_id,
-					session.team_id,
-					session.team_id,
-					repositoryId,
-					session.team_id,
-					actor,
-					eventId,
-				),
-			db
-				.prepare(
-					"INSERT INTO team_repositories(team_id,repository_id,actor) SELECT ?,r.id,? FROM github_repositories r WHERE r.id=? AND r.accessible=1 AND r.full_name IN('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus') AND EXISTS(SELECT 1 FROM teams WHERE id=? AND hackathon_id='initial' AND status='ACTIVE') AND ((SELECT COUNT(*) FROM team_repositories WHERE team_id=? AND active=1)<>1 OR NOT EXISTS(SELECT 1 FROM team_repositories WHERE team_id=? AND repository_id=r.id AND active=1)) AND EXISTS(SELECT 1 FROM audit WHERE action='team.track_selected' AND entity=? AND actor=? AND json_extract(changes,'$.eventId')=?) ON CONFLICT(team_id,repository_id) DO UPDATE SET active=1,actor=excluded.actor,assigned_at=CURRENT_TIMESTAMP",
-				)
-				.bind(
-					session.team_id,
-					actor,
-					repositoryId,
-					session.team_id,
-					session.team_id,
-					session.team_id,
-					session.team_id,
-					actor,
-					eventId,
-				),
-		]);
-		const selected = updated[0]?.results[0] as
-			| {
-				id: number;
-				full_name: string;
-				team_active: number;
-				selection_needed: number;
-						engineering_locked: number;
-			}
-			| undefined;
-		if (!selected) return json({ error: "TRACK_NOT_ALLOWED" }, 403);
-		if (!selected.team_active) return json({ error: "UNAUTHORIZED" }, 401);
-		const track = {
-			repositoryId: selected.id,
-			fullName: selected.full_name,
-		};
-		if (!selected.selection_needed) {
-			return json({ track, unchanged: true });
+		try {
+			const saved = await db.batch([
+				db.prepare("INSERT INTO audit(action,entity,actor,changes) VALUES('team.track_selected',?,?,?)").bind(session.team_id, actor, JSON.stringify({ eventId, previousRepositoryIds: current.repository_id === null ? [] : [current.repository_id], repositoryId: requested.id, fullName: requested.full_name })),
+				db.prepare("UPDATE team_repositories SET active=0,actor=?,assigned_at=CURRENT_TIMESTAMP WHERE team_id=? AND active=1 AND EXISTS(SELECT 1 FROM audit WHERE action='team.track_selected' AND entity=? AND actor=? AND json_extract(changes,'$.eventId')=?)").bind(actor, session.team_id, session.team_id, actor, eventId),
+				db.prepare("INSERT INTO team_repositories(team_id,repository_id,actor) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM github_repositories r WHERE r.id=? AND r.accessible=1 AND r.full_name IN('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus')) AND EXISTS(SELECT 1 FROM audit WHERE action='team.track_selected' AND entity=? AND actor=? AND json_extract(changes,'$.eventId')=?) ON CONFLICT(team_id,repository_id) DO UPDATE SET active=1,actor=excluded.actor,assigned_at=CURRENT_TIMESTAMP").bind(session.team_id, requested.id, actor, requested.id, session.team_id, actor, eventId),
+				db.prepare("UPDATE teams SET track_finalized=1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND track_finalized=0 AND status='ACTIVE' AND (SELECT count(*) FROM team_repositories WHERE team_id=? AND active=1)=1 AND EXISTS(SELECT 1 FROM team_repositories tr JOIN github_repositories r ON r.id=tr.repository_id WHERE tr.team_id=? AND tr.repository_id=? AND tr.active=1 AND r.accessible=1 AND r.full_name IN('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus')) AND EXISTS(SELECT 1 FROM audit WHERE action='team.track_selected' AND entity=? AND actor=? AND json_extract(changes,'$.eventId')=?)").bind(session.team_id, session.team_id, session.team_id, requested.id, session.team_id, actor, eventId),
+			]);
+			if (!saved[0]?.meta.changes) return json({ error: "SERVICE_UNAVAILABLE" }, 503);
+			if (!saved[3]?.meta.changes) return json({ error: "TRACK_FINALIZED" }, 409);
+		} catch {
+			return json({ error: "TRACK_FINALIZED" }, 409);
 		}
-		if (selected.engineering_locked) {
-			return json({ error: "TRACK_LOCKED" }, 409);
-		}
-		if (!updated[1]?.meta.changes || !updated[3]?.meta.changes) {
-			return json({ error: "SERVICE_UNAVAILABLE" }, 503);
-		}
-		return json({ track });
+		return json({ track: { repositoryId: requested.id, fullName: requested.full_name } });
 	}
 	if (path === "/track-options" && request.method === "GET") {
 		const repositories = await db
@@ -437,15 +408,23 @@ export async function participantConsole(
 		if (!publication) return json({ published: false });
 		try {
 			const snapshot = JSON.parse(publication.snapshot) as {
-				results?: Array<{ teamId?: string }>;
-				ranking?: Array<{ teamId?: string }>;
+				results?: Array<Record<string, unknown> & { teamId?: string }>;
+				ranking?: Array<Record<string, unknown> & { teamId?: string }>;
 			};
-			const results = snapshot.results?.filter(
-				(result) => result.teamId === session.team_id,
-			) ?? [];
-			const ranking = snapshot.ranking?.filter(
-				(result) => result.teamId === session.team_id,
-			) ?? [];
+			const results = (snapshot.results ?? [])
+				.filter((result) => result.teamId === session.team_id)
+				.map((result) => Object.fromEntries(
+					["teamId", "teamName", "track", "repositorySelection", "analysisAverage", "engineeringAverage", "status", "finalScore", "feedback", "feedbackTruncated"]
+						.filter((key) => key in result)
+						.map((key) => [key, result[key]]),
+				));
+			const ranking = (snapshot.ranking ?? [])
+				.filter((result) => result.teamId === session.team_id)
+				.map((result) => Object.fromEntries(
+					["teamId", "teamName", "track", "rank", "finalScore", "status"]
+						.filter((key) => key in result)
+						.map((key) => [key, result[key]]),
+				));
 			const response: {
 				published: true;
 				results: typeof results;

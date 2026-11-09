@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Miniflare } from "./miniflare";
 import { migrate } from "./database";
 import { importTeams } from "../src/competition-teams";
-import { dispatchTeamInvitations } from "../src/team-invitations";
+import { dispatchTeamInvitations, requestParticipantLoginCode, teamAccessKey } from "../src/team-invitations";
 import worker from "../src/index";
 import type { CompetitionServices } from "../src/competition-store";
 import type { Env } from "../src/env";
@@ -13,6 +13,8 @@ let mf: Miniflare;
 let env: Env;
 let inviteBody = "";
 let teamId = "";
+let teamKey = "";
+let lastCode = "";
 const services = {
 	client: async () => {
 		throw new Error("Email-only import must not require GitHub App access.");
@@ -33,6 +35,8 @@ function request(path: string, method = "GET", data?: unknown, cookie = "") {
 
 beforeEach(async () => {
 	inviteBody = "";
+	teamKey = "";
+	lastCode = "";
 	mf = new Miniflare({
 		modules: true,
 		script: 'export default{fetch(){return new Response("ok")}}',
@@ -70,16 +74,22 @@ beforeEach(async () => {
 		commit: true,
 	});
 	teamId = imported.teams[0]!.id;
+	await db.prepare("INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(91,'180DC-VIT-CHENNAI/mazhai-cover',0,'main')").run();
+	await db.prepare("INSERT INTO team_repositories(team_id,repository_id,actor) VALUES(?,91,'organizer:test')").bind(teamId).run();
+	await db.prepare("UPDATE teams SET track_finalized=1 WHERE id=?").bind(teamId).run();
+	teamKey = (await teamAccessKey(env, teamId))!;
 	await dispatchTeamInvitations(env);
 });
 
 afterEach(async () => mf.dispose());
 
 async function verify(email: string) {
+	await requestParticipantLoginCode(env, email, Date.now(), "test-ip", teamKey);
 	const code = inviteBody.match(/[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}/)?.[0];
 	expect(code).toBeTruthy();
+	lastCode = code!;
 	const response = await worker.fetch(
-		request("/api/organization/participant/verify", "POST", { email, code }),
+		request("/api/organization/participant/verify", "POST", { email, code, teamKey }),
 		env,
 		ctx,
 	);
@@ -92,6 +102,7 @@ async function verify(email: string) {
 describe("email-only participant onboarding and GitHub linking", () => {
 	it("verifies each imported member with the shared code and returns safe participant state", async () => {
 		const alice = await verify("alice@example.test");
+		const aliceCode = lastCode;
 		const bob = await verify("bob@example.test");
 		expect(alice.response.status).toBe(200);
 		expect(await alice.response.json()).toMatchObject({
@@ -109,12 +120,12 @@ describe("email-only participant onboarding and GitHub linking", () => {
 			request(
 				"/api/organization/participant/verify",
 				"POST",
-				{ email: "alice@example.test", code: inviteBody.match(/[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}/)?.[0] },
+				{ email: "alice@example.test", code: aliceCode, teamKey },
 			),
 			env,
 			ctx,
 		);
-		expect(replay.status).toBe(409);
+		expect(replay.status).toBe(401);
 	});
 
 	it("links only the authenticated Arena GitHub identity and rejects another member's identity", async () => {
@@ -200,14 +211,7 @@ describe("email-only participant onboarding and GitHub linking", () => {
 			env,
 			ctx,
 		);
-		expect([reLogin.status, await reLogin.json()]).toEqual([
-			200,
-			{
-				authenticated: true,
-				identity: expect.objectContaining({ role: "participant", teamId }),
-			},
-		]);
-		expect(reLogin.headers.get("set-cookie")).toContain("judge_organizer=");
+		expect([reLogin.status, await reLogin.json()]).toEqual([403, { error: "EMAIL_OTP_REQUIRED" }]);
 	});
 
 	it("requires an Arena session and reports an unavailable or unlinked Arena account", async () => {
@@ -236,14 +240,14 @@ describe("email-only participant onboarding and GitHub linking", () => {
 			403,
 			{ error: "GITHUB_IDENTITY_NOT_LINKED" },
 		]);
-		const loginWithoutProof = await worker.fetch(
+		const githubOnlyLogin = await worker.fetch(
 			request("/api/organization/participant/github-login", "POST"),
 			env,
 			ctx,
 		);
-		expect([loginWithoutProof.status, await loginWithoutProof.json()]).toEqual([
-			401,
-			{ error: "GITHUB_SESSION_REQUIRED" },
+		expect([githubOnlyLogin.status, await githubOnlyLogin.json()]).toEqual([
+			403,
+			{ error: "EMAIL_OTP_REQUIRED" },
 		]);
 	});
 });

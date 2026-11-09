@@ -53,6 +53,12 @@ async function share(reviewId: string, shared: boolean) {
 }
 
 async function publishSnapshot() {
+	const finalScore = await roundTwoResults(request(
+		"/api/organization/round-two/results/final-score",
+		"POST",
+		{ teamId: "team-a", score: 88, reason: "Final mark after reviewing submitted evidence." },
+	), env, judge);
+	if (finalScore.status !== 201 && finalScore.status !== 409) throw new Error(`Final score setup failed: ${await finalScore.text()}`);
 	const created = await roundTwoResults(request(
 		"/api/organization/round-two/results/snapshots",
 		"POST",

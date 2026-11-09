@@ -105,6 +105,10 @@ export function teamInsertStatements(
   team: Awaited<ReturnType<typeof createTeam>>,
 ) {
   const db = competitionDB(env);
+  const leadEmail = team.leadEmail?.trim().toLowerCase() ?? null;
+  const leadIsInRoster = !!leadEmail && team.members.some(
+    (member) => member.email?.trim().toLowerCase() === leadEmail,
+  );
   return [
     db
       .prepare(
@@ -167,6 +171,13 @@ export function teamInsertStatements(
           ),
       ];
     }),
+    ...(leadEmail && !leadIsInRoster
+      ? [
+          db.prepare(
+            "INSERT INTO team_roster_members(id,team_id,hackathon_id,display_name,email) VALUES(?,?,'initial','Team Lead',?)",
+          ).bind('roster-' + crypto.randomUUID(), team.id, leadEmail),
+        ]
+      : []),
     ...team.repositoryIds.map((repositoryId) =>
       db
         .prepare(

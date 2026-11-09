@@ -1,6 +1,5 @@
 export { OrganizerResults } from "./results";
 export {
-	calculateDisplayedFinalScore,
 	displayedStageScore,
 	transitionConfirmation,
 } from "./score-display";

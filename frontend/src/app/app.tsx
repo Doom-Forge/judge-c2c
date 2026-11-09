@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
-import { ApiError, getOrganizationStatus, loginLinkedParticipantWithGitHub, loginOrganization, logoutOrganization, requestParticipantCode, verifyParticipant } from "@/lib/api";
+import { ApiError, getOrganizationStatus, loginOrganization, logoutOrganization, requestParticipantCode, verifyParticipant } from "@/lib/api";
 import { SessionNotice } from "@/app/session-notice";
 import type { Role, Session } from "@/types/session";
 
@@ -11,6 +11,7 @@ const ParticipantDashboard = lazy(() => import("@/features/participant/participa
 const OrganizerCommandCenter = lazy(() => import("@/features/organizer/command-center").then(({ OrganizerCommandCenter }) => ({ default: OrganizerCommandCenter })));
 const OrganizerResults = lazy(() => import("@/features/organizer/results/results").then(({ OrganizerResults }) => ({ default: OrganizerResults })));
 const JudgeWorkspace = lazy(() => import("@/features/judge/judge-workspace").then(({ JudgeWorkspace }) => ({ default: JudgeWorkspace })));
+const OrganizerTeamInspector = lazy(() => import("@/features/organizer/team-inspector").then(({ OrganizerTeamInspector }) => ({ default: OrganizerTeamInspector })));
 
 function AccessState({ role, required }: { role: Role; required: Role }) {
 	return (
@@ -30,21 +31,6 @@ function Workspace() {
 	const refreshSession = useCallback(async () => {
 		try {
 			let status = await getOrganizationStatus();
-			if (!status.authenticated && sessionStorage.getItem("doomforge.participant-github-login") === "pending") {
-				sessionStorage.removeItem("doomforge.participant-github-login");
-				try {
-					await loginLinkedParticipantWithGitHub();
-					status = await getOrganizationStatus();
-				} catch (error) {
-					setAuthError(error instanceof ApiError && error.code === "GITHUB_PARTICIPANT_NOT_FOUND"
-						? "This GitHub account is not linked to an active participant. Activate your team account with its email verification code first."
-						: error instanceof ApiError && error.code === "GITHUB_IDENTITY_NOT_LINKED"
-						? "This GitHub account has not been linked to a participant. Activate your team account with its email verification code first."
-						: error instanceof ApiError && error.code === "GITHUB_SESSION_REQUIRED"
-						? "GitHub sign-in did not complete. Continue with GitHub and try again."
-						: error instanceof Error ? error.message : "GitHub sign-in failed.");
-				}
-			}
 			setSession(status.authenticated
 				? { kind: "live", status }
 				: { kind: "signed-out", organization: status.organization ?? null });
@@ -71,10 +57,10 @@ function Workspace() {
 		}
 	}, [refreshSession]);
 
-	const participantVerify = useCallback(async (email: string, code: string): Promise<boolean> => {
+	const participantVerify = useCallback(async (email: string, code: string, teamKey?: string): Promise<boolean> => {
 		setAuthError(null);
 		try {
-			await verifyParticipant(email, code);
+			await verifyParticipant(email, code, teamKey);
 			await refreshSession();
 			return true;
 		} catch (error) {
@@ -83,10 +69,10 @@ function Workspace() {
 		}
 	}, [refreshSession]);
 
-	const participantCodeRequest = useCallback(async (email: string): Promise<boolean> => {
+	const participantCodeRequest = useCallback(async (email: string, teamKey?: string): Promise<boolean> => {
 		setAuthError(null);
 		try {
-			await requestParticipantCode(email);
+			await requestParticipantCode(email, teamKey);
 			return true;
 		} catch (error) {
 			setAuthError(error instanceof ApiError && error.code === "PARTICIPANT_EMAIL_UNAVAILABLE"
@@ -150,6 +136,8 @@ function Workspace() {
 						<Route element={participant("evaluation")} path="/evaluation" />
 						<Route element={org("github")} path="/repositories" />
 						<Route element={<Navigate replace to="/" />} path="*" />
+						<Route element={role === "organizer" ? <OrganizerTeamInspector /> : denied("organizer")} path="/inspect/team/:teamId" />
+						<Route element={role === "organizer" ? <JudgeWorkspaceRoute readOnly /> : denied("organizer")} path="/inspect/judge" />
 					</Routes>
 				</Suspense>
 			</div>
@@ -157,10 +145,11 @@ function Workspace() {
 	);
 }
 
-function JudgeWorkspaceRoute() {
+function JudgeWorkspaceRoute({ readOnly = false }: { readOnly?: boolean }) {
 	const location = useLocation();
 	const initialTeamId = new URLSearchParams(location.search).get("teamId") ?? "";
-	return <JudgeWorkspace initialTeamId={initialTeamId} />;
+	const reviewerIdentityId = new URLSearchParams(location.search).get("judgeIdentityId") ?? "";
+	return <JudgeWorkspace initialTeamId={initialTeamId} reviewerIdentityId={reviewerIdentityId} readOnly={readOnly} />;
 }
 
 export function App() {

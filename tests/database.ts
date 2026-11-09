@@ -40,6 +40,9 @@ export const migrationFiles = [
 	"0044_email_only_team_members.sql",
 	"0045_participant_email_login.sql",
 	"0046_round_two_review_score_sharing.sql",
+	"0047_final_team_onboarding.sql",
+	"0048_unverified_matrix_intake.sql",
+	"0049_round_two_team_final_scores.sql",
 ] as const;
 export async function migrate(
 	db: D1Database,

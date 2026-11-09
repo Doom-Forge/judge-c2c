@@ -2,15 +2,26 @@ import { z } from "zod";
 import { pathSchema } from "./domain";
 
 export const categories = ["scalability", "security", "usefulness"] as const;
+// Shared organizer rubric rendered on GitHub for the four current challenges.
+// It is intentionally separate from pilot scoring rules until profiles exist.
+export const githubEvidenceCategories = [
+	"Functional correctness",
+	"Security",
+	"Performance and scalability",
+	"Code quality",
+	"Innovation and usefulness",
+	"Reproducibility",
+] as const;
 // These repositories are intentionally visible while challenge specifications
 // are being prepared. They have no trusted matrix, baseline, or container image
 // yet and must not be evaluated or scored.
-export const specificationRequiredRepositories = [
+export const activeCompetitionRepositories = [
 	"180DC-VIT-CHENNAI/mazhai-cover",
 	"180DC-VIT-CHENNAI/pricingpulse",
 	"180DC-VIT-CHENNAI/veera-footwear",
 	"180DC-VIT-CHENNAI/janus",
 ] as const;
+export const specificationRequiredRepositories = activeCompetitionRepositories;
 export const matrixRepositoryStatus = (
 	fullName: string,
 	configured: boolean,

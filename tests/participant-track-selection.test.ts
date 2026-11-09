@@ -37,6 +37,9 @@ beforeEach(async () => {
 	await db
 		.prepare("INSERT INTO teams(id,name) VALUES('team-a','Team A')")
 		.run();
+	await db.prepare("UPDATE teams SET hackathon_id='initial',status='ACTIVE',lead_email='lead@example.test' WHERE id='team-a'").run();
+	await db.prepare("INSERT INTO team_roster_members(id,team_id,hackathon_id,display_name,email) VALUES('lead-roster','team-a','initial','Team Lead','lead@example.test')").run();
+	await db.prepare("INSERT INTO console_identities(id,name,role,team_id,team_roster_member_id,credential_hash) VALUES('participant-identity','Team A','participant','team-a','lead-roster',?)").bind("b".repeat(64)).run();
 	for (
 		const [id, name] of [
 			[10, "mazhai-cover"],
@@ -53,11 +56,7 @@ beforeEach(async () => {
 			.bind(id, "180DC-VIT-CHENNAI/" + name)
 			.run();
 	}
-	await db
-		.prepare(
-			"INSERT INTO team_repositories(team_id,repository_id,actor) VALUES('team-a',14,'organizer:test')",
-		)
-		.run();
+	await db.prepare("INSERT INTO team_repositories(team_id,repository_id,actor) VALUES('team-a',14,'organizer:test')").run();
 	env = { ORG_DB: db } as unknown as Env;
 });
 
@@ -94,7 +93,8 @@ describe("participant repository track selection", () => {
 			response.status,
 			result.track,
 			active.results,
-			dashboardResult.track,
+				dashboard.status,
+				dashboardResult,
 			JSON.parse(audit ?? "{}"),
 		]).toEqual([
 			200,
@@ -103,10 +103,8 @@ describe("participant repository track selection", () => {
 				fullName: "180DC-VIT-CHENNAI/pricingpulse",
 			},
 			[{ repository_id: 11 }],
-			{
-				repositoryId: 11,
-				fullName: "180DC-VIT-CHENNAI/pricingpulse",
-			},
+			428,
+			{ error: "PARTICIPANT_ONBOARDING_REQUIRED" },
 			{
 				eventId: expect.any(String),
 				previousRepositoryIds: [14],

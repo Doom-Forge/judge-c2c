@@ -58,6 +58,19 @@ async function finalReview(
 		.run();
 }
 
+async function finalizeScore(teamId: string, judgeId: string, score: number) {
+	const session: ConsoleSession = { hash: "assigned-judge", role: "judge", identity_id: judgeId, name: judgeId, team_id: null };
+	return roundTwoResults(request("/api/organization/round-two/results/final-score", "POST", { teamId, score, reason: "Final mark after reviewing submitted evidence." }), env, session);
+}
+
+async function finalizeAllTeams() {
+	await env.ORG_DB!.prepare("INSERT OR IGNORE INTO round_two_review_submissions(id,team_id,judge_identity_id,stage,revision,score,payload,document_id,reason,rubric_version_id) VALUES('b-pr-1','team-b','judge-1','ENGINEERING',1,85,'{}',NULL,'Initial submission','rubric-a')").run();
+	for (const [teamId, judgeId, score] of [["team-a", "judge-1", 90.1], ["team-b", "judge-1", 75]] as const) {
+		const response = await finalizeScore(teamId, judgeId, score);
+		if (response.status !== 201) throw new Error(`Test setup failed to finalize ${teamId}: ${await response.text()}`);
+	}
+}
+
 beforeEach(async () => {
 	mf = new Miniflare({
 		modules: true,
@@ -97,6 +110,7 @@ beforeEach(async () => {
 		)
 		.bind("1".repeat(64), "2".repeat(64))
 		.run();
+	await db.prepare("INSERT INTO round_two_judge_assignments(id,judge_identity_id,team_id,assigned_by) VALUES('assignment-a-1','judge-1','team-a','organizer:test'),('assignment-a-2','judge-2','team-a','organizer:test'),('assignment-b-1','judge-1','team-b','organizer:test')").run();
 	env = { ORG_DB: db } as unknown as Env;
 	await finalReview("a-doc-1", "team-a", "judge-1", "ANALYSIS", 1, 80);
 	await finalReview("a-doc-2", "team-a", "judge-1", "ANALYSIS", 2, 84);
@@ -112,6 +126,7 @@ afterEach(async () => {
 
 describe("private 10/90 results aggregation", () => {
 	it("freezes the organizer leaderboard until it is unfrozen and records each transition", async () => {
+		await finalizeAllTeams();
 		const freeze = await roundTwoReview(
 			request("/api/organization/round-two/results/freeze", "POST", {
 				reason: "Freeze the current leaderboard for review.",
@@ -251,8 +266,9 @@ describe("private 10/90 results aggregation", () => {
 		expect(team).toMatchObject({
 			engineeringJudgeCount: 1,
 			engineeringAverage: 92,
-			status: "READY",
-			finalScore: 91,
+			status: "PENDING",
+			manualAggregateScore: 91,
+			finalScore: null,
 		});
 		const historical = await env.ORG_DB!.prepare(
 			"SELECT count(*) AS count FROM round_two_review_submissions WHERE team_id='team-a' AND stage='ENGINEERING'",
@@ -283,11 +299,13 @@ describe("private 10/90 results aggregation", () => {
 		expect(body.results.find((result) => result.teamId === "team-a")).toMatchObject({
 			engineeringJudgeCount: 2,
 			engineeringAverage: 93,
-			finalScore: 91.9,
+			status: "PENDING",
+			manualAggregateScore: 91.9,
+			finalScore: null,
 		});
 	});
 
-	it("averages each judge latest revision and applies the 10/90 formula", async () => {
+	it("keeps the manual-review aggregate separate from the official score", async () => {
 		const response = await roundTwoResults(request(), env, organizer),
 			result = (await response.json()) as {
 				results: {
@@ -303,12 +321,13 @@ describe("private 10/90 results aggregation", () => {
 			team = result.results.find((item) => item.teamId === "team-a");
 
 		expect(team).toMatchObject({
-			status: "READY",
+			status: "PENDING",
 			analysisAverage: 82,
 			engineeringAverage: 91,
 			analysisJudgeCount: 2,
 			engineeringJudgeCount: 2,
-			finalScore: 90.1,
+			manualAggregateScore: 90.1,
+			finalScore: null,
 		});
 	});
 
@@ -386,6 +405,7 @@ describe("private 10/90 results aggregation", () => {
 	});
 
 	it("keeps a newer freeze when an unfreeze used an older observed snapshot", async () => {
+		await finalizeAllTeams();
 		const freeze = (reason: string) =>
 			roundTwoResults(
 				request("/api/organization/round-two/results/freeze", "POST", {
@@ -495,6 +515,7 @@ describe("private 10/90 results aggregation", () => {
 	});
 
 	it("handles simultaneous freeze requests as one transition", async () => {
+		await finalizeAllTeams();
 		const freeze = (reason: string) =>
 			roundTwoResults(
 				request("/api/organization/round-two/results/freeze", "POST", {
@@ -548,10 +569,11 @@ describe("private 10/90 results aggregation", () => {
 			{ ...env, ORG_DB: db } as Env,
 			organizer,
 		);
-		expect(batchSizes).toContain(3);
+		expect(batchSizes).toContain(5);
 	});
 
 	it("includes only feedback from latest submitted revisions in result snapshots", async () => {
+		await finalizeAllTeams();
 		await finalReview("a-doc-4", "team-a", "judge-1", "ANALYSIS", 3, 100, null, { problemUnderstanding: "Clear framing", remediation: "Fix addresses root cause", innovationImpact: "Strong impact", overall: "Final submitted comment" });
 		await env.ORG_DB!.prepare("INSERT INTO round_two_review_drafts(team_id,judge_identity_id,stage,score,payload,document_id) VALUES('team-a','judge-1','ANALYSIS',99,?,NULL)")
 			.bind(JSON.stringify({ overall: "Private draft comment" }))
@@ -578,6 +600,7 @@ describe("private 10/90 results aggregation", () => {
 	});
 
 	it("freezes score results and publishes only complete snapshots", async () => {
+		await finalizeScore("team-a", "judge-1", 90.1);
 		const createSnapshot = () =>
 				roundTwoReview(
 					request(
@@ -588,13 +611,7 @@ describe("private 10/90 results aggregation", () => {
 					env,
 					organizer,
 				),
-			firstSnapshotResponse = await createSnapshot(),
-			firstSnapshot = (await firstSnapshotResponse.json()) as {
-				id: string;
-				snapshot: {
-					results: { teamId: string; finalScore: number | null }[];
-				};
-			};
+			firstSnapshotResponse = await createSnapshot();
 
 		const judgeSnapshot = await roundTwoReview(
 			request(
@@ -608,10 +625,8 @@ describe("private 10/90 results aggregation", () => {
 		expect([
 			firstSnapshotResponse.status,
 			judgeSnapshot.status,
-			firstSnapshot.snapshot.results.find(
-				(team) => team.teamId === "team-a",
-			)?.finalScore,
-		]).toEqual([201, 403, 90.1]);
+			(await firstSnapshotResponse.json() as { error: string }).error,
+		]).toEqual([409, 403, "FINAL_SCORES_REQUIRED"]);
 
 		await finalReview(
 			"a-doc-4",
@@ -621,28 +636,6 @@ describe("private 10/90 results aggregation", () => {
 			3,
 			100,
 		);
-		const frozen = await env.ORG_DB!.prepare(
-			"SELECT snapshot FROM round_two_result_snapshots WHERE id=?",
-		)
-			.bind(firstSnapshot.id)
-			.first<string>("snapshot");
-		expect(
-			JSON.parse(frozen!).results.find(
-				(team: { teamId: string }) => team.teamId === "team-a",
-			).analysisAverage,
-		).toBe(82);
-
-		const incompletePublish = await roundTwoReview(
-			request(
-				"/api/organization/round-two/results/publication",
-				"POST",
-				{ snapshotId: firstSnapshot.id, reason: "Publish results." },
-			),
-			env,
-			organizer,
-		);
-		expect(incompletePublish.status).toBe(409);
-
 		await finalReview(
 			"b-pr-1",
 			"team-b",
@@ -652,6 +645,8 @@ describe("private 10/90 results aggregation", () => {
 			85,
 			"rubric-a",
 		);
+		const teamBFinal = await finalizeScore("team-b", "judge-1", 85);
+		expect(teamBFinal.status).toBe(201);
 		const completeSnapshotResponse = await createSnapshot(),
 			completeSnapshot = (await completeSnapshotResponse.json()) as {
 				id: string;

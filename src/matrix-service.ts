@@ -1,12 +1,12 @@
 import { matrixBudget } from "./matrix-budget";
 import { isMatrixOriginAllowed } from "./matrix-cors";
 import { z } from "zod";
-import { canonical, digest, sha } from "./domain";
+import { digest, sha } from "./domain";
 import { boundedBody, equalSecret } from "./security";
 import {
 	matrixRepositoryStatus,
+	githubEvidenceCategories,
 	specificationRequiredRepositories,
-	validateSnapshot,
 } from "./matrix";
 import { organizationEnv } from "./organization";
 import { GitHub } from "./github";
@@ -65,6 +65,8 @@ type DefaultReviewerClientFactory = (
 type MatrixPRDependencies = {
 	clientFactory?: DefaultReviewerClientFactory;
 	deferReviewer?: (task: Promise<void>) => void;
+	deferPublication?: (task: Promise<void>) => void;
+	publishCheck?: (row: UnverifiedPR) => Promise<void>;
 };
 async function defaultReviewerClient(
 	env: Env,
@@ -107,10 +109,71 @@ async function requestDefaultReviewerForUnconfiguredPR(
 		// The specification-required response remains authoritative if review assignment is unavailable.
 	}
 }
-export async function dispatchMatrix(env: Env, id: string) {
-	if (!env.MATRIX_EVALUATOR) {
-		throw new Error("MATRIX_WORKFLOW_NOT_CONFIGURED");
+
+type UnverifiedPR = {
+	repository_id: number;
+	full_name: string;
+	pr_number: number;
+	head_sha: string;
+	check_run_id: number | null;
+};
+
+async function publishUnverifiedPRCheck(env: Env, db: D1Database, row: UnverifiedPR) {
+	const lease = crypto.randomUUID();
+	const claimed = await db.prepare("UPDATE unverified_pr_submissions SET check_status='PUBLISHING',check_lease_owner=?,check_lease_until=? WHERE repository_id=? AND pr_number=? AND head_sha=? AND check_status<>'PUBLISHED' AND check_lease_until<=?")
+		.bind(lease, Date.now() + 60_000, row.repository_id, row.pr_number, row.head_sha, Date.now()).run();
+	if (!claimed.meta.changes) return;
+	try {
+		const connection = await db.prepare("SELECT installation_id FROM github_connection WHERE id=1").first<number>("installation_id");
+		if (!connection) throw new Error("APP_NOT_INSTALLED");
+		const github = await GitHub.installation(await organizationEnv(env), {
+			repository: { id: row.repository_id, fullName: row.full_name, installationId: connection },
+		} as Contract, { issuesWrite: false, pullRequestsWrite: false, checksWrite: true });
+		const externalId = `unverified:${row.repository_id}:${row.pr_number}:${row.head_sha}`;
+		let checkId = row.check_run_id;
+		if (!checkId) {
+			const existing = await github.api<{ check_runs: { id: number; external_id?: string | null }[] }>(
+				`/repos/${row.full_name}/commits/${row.head_sha}/check-runs?check_name=DoomBot&filter=all&per_page=100`,
+			);
+			checkId = existing.check_runs.find((check) => check.external_id === externalId)?.id ?? null;
+		}
+		const sections = githubEvidenceCategories.map((category) => `### ${category}\n\nUNVERIFIED — no approved evaluation profile is active.`).join("\n\n");
+		const output = {
+			title: "Evaluation pending approved profile",
+			summary: "DoomBot received this pull request. No container execution or marks were produced; judges must enter a final score explicitly.\n\n" + sections,
+		};
+		const result = await github.api<{ id: number }>(
+			`/repos/${row.full_name}/check-runs${checkId ? "/" + checkId : ""}`,
+			{
+				method: checkId ? "PATCH" : "POST",
+				body: JSON.stringify({
+					name: "DoomBot",
+					head_sha: row.head_sha,
+					external_id: externalId,
+					status: "completed",
+					conclusion: "neutral",
+					output,
+				}),
+			},
+		);
+		await db.prepare("UPDATE unverified_pr_submissions SET check_run_id=?,check_status='PUBLISHED',check_lease_owner=NULL,check_lease_until=0,updated_at=CURRENT_TIMESTAMP WHERE repository_id=? AND pr_number=? AND head_sha=? AND check_lease_owner=?")
+			.bind(result.id, row.repository_id, row.pr_number, row.head_sha, lease).run();
+	} catch {
+		await db.prepare("UPDATE unverified_pr_submissions SET check_status='FAILED',check_lease_owner=NULL,check_lease_until=0,updated_at=CURRENT_TIMESTAMP WHERE repository_id=? AND pr_number=? AND head_sha=? AND check_lease_owner=?")
+			.bind(row.repository_id, row.pr_number, row.head_sha, lease).run();
 	}
+}
+export async function dispatchMatrix(env: Env, id: string) {
+	const db = dbFor(env);
+	const row = await db.prepare("SELECT r.full_name,a.matrix_digest,a.image_uri,m.matrix_digest AS configured_digest,m.image_uri AS configured_image FROM matrix_runs r JOIN matrix_repositories m ON m.repository_id=r.repository_id AND m.full_name=r.full_name LEFT JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id WHERE r.id=?")
+		.bind(id).first<{ full_name: string; matrix_digest: string | null; image_uri: string | null; configured_digest: string; configured_image: string }>();
+	if (!row || !specificationRequiredRepositories.includes(row.full_name as typeof specificationRequiredRepositories[number])) {
+		throw new Error("MATRIX_REPOSITORY_NOT_AUTHORIZED");
+	}
+	if (!row.matrix_digest || !row.image_uri || row.matrix_digest !== row.configured_digest || row.image_uri !== row.configured_image) {
+		throw new Error("MATRIX_PROFILE_NOT_APPROVED");
+	}
+	if (!env.MATRIX_EVALUATOR) throw new Error("MATRIX_WORKFLOW_NOT_CONFIGURED");
 	try {
 		await env.MATRIX_EVALUATOR.create({ id, params: { runId: id } });
 	} catch (error) {
@@ -127,7 +190,7 @@ export async function acceptMatrixPR(
 	env: Env,
 	delivery: string,
 	payloadHash: string,
-	resolvePR?: () => Promise<{
+	_resolvePR?: () => Promise<{
 		head: { sha: string };
 		state: "open" | "closed";
 		updated_at: string;
@@ -171,256 +234,64 @@ export async function acceptMatrixPR(
 		if (pr.state !== (p.action === "closed" ? "closed" : "open")) {
 			return json({ error: "INCONSISTENT_EVENT" }, 400);
 		}
-		if (pr.state === "open") {
-			const reviewerTask = requestDefaultReviewerForUnconfiguredPR(
-				env,
-				db,
-				selected,
-				pr.number,
-				dependencies.clientFactory,
-			);
-			if (dependencies.deferReviewer) {
-				dependencies.deferReviewer(reviewerTask);
-			} else {
-				await reviewerTask;
-			}
+		const priorDelivery = await db.prepare("SELECT payload_hash FROM matrix_deliveries WHERE id=?")
+			.bind(delivery).first<{ payload_hash: string }>();
+		if (priorDelivery) {
+			if (priorDelivery.payload_hash !== payloadHash) return json({ error: "DELIVERY_CONFLICT" }, 409);
+			return json({ status: "duplicate" }, 202);
 		}
-		return json({ error: "CHALLENGE_SPECIFICATION_REQUIRED" }, 403);
-	}
-	const repo = await db
-		.prepare(
-			"SELECT m.*,g.accessible,c.installation_id FROM matrix_repositories m JOIN github_repositories g ON g.id=m.repository_id CROSS JOIN github_connection c WHERE m.repository_id=? AND m.full_name=? AND c.id=1",
-		)
-		.bind(p.repository.id, p.repository.full_name)
-		.first<{
-			repository_id: number;
-			full_name: string;
-			baseline_sha: string;
-			matrix_version: string;
-			matrix_digest: string;
-			image_uri: string;
-			accessible: number;
-			installation_id: number;
-		}>();
-	if (
-		!repo ||
-		!repo.accessible ||
-		repo.installation_id !== p.installation.id ||
-		pr.base.repo.id !== repo.repository_id
-	) {
-		return json({ error: "REPOSITORY_NOT_SELECTED" }, 403);
-	}
-	const previous = await db
-		.prepare("SELECT payload_hash FROM matrix_deliveries WHERE id=?")
-		.bind(delivery)
-		.first<{ payload_hash: string }>();
-	if (previous && previous.payload_hash !== payloadHash) {
-		return json({ error: "DELIVERY_CONFLICT" }, 409);
-	}
-	const current = await db
-		.prepare(
-			"SELECT * FROM matrix_submissions WHERE repository_id=? AND pr_number=?",
-		)
-		.bind(repo.repository_id, pr.number)
-		.first<{
-			updated_at: string;
-			head_sha: string;
-			latest_run_id: string;
-			closed: number;
-		}>();
-	if (previous) {
-		if (current) {
-			const queued = await db
-				.prepare(
-					"SELECT id FROM matrix_runs WHERE id=? AND state='QUEUED'",
-				)
-				.bind(current.latest_run_id)
-				.first();
-			if (queued) await dispatchMatrix(env, current.latest_run_id);
-		}
-		return json({ status: "duplicate" });
-	}
-	if (
-		current &&
-		current.updated_at === pr.updated_at &&
-		(current.head_sha !== pr.head.sha ||
-			!!current.closed !== (pr.state === "closed"))
-	) {
-		const live = await (resolvePR ? resolvePR() : (async () => {
-			const github = await GitHub.installation(
-				await organizationEnv(env),
-				{
-					repository: {
-						id: repo.repository_id,
-						fullName: repo.full_name,
-						installationId: repo.installation_id,
-					},
-				} as Contract,
-			);
-			return github.api<{
-				head: { sha: string };
-				state: "open" | "closed";
-				updated_at: string;
-				user: { id: number; login: string };
-			}>(`/repos/${repo.full_name}/pulls/${pr.number}`);
-		})());
-		pr.head.sha = sha.parse(live.head.sha);
-		pr.state = live.state;
-		pr.updated_at = z.string().datetime().parse(live.updated_at);
-		pr.user = live.user;
-		p.action = live.state === "closed" ? "closed" : "synchronize";
-	}
-	if (pr.state !== (p.action === "closed" ? "closed" : "open")) {
-		return json({ error: "INCONSISTENT_EVENT" }, 400);
-	}
-	const record = db
-		.prepare(
-			"INSERT OR IGNORE INTO matrix_deliveries(id,payload_hash) VALUES(?,?)",
-		)
-		.bind(delivery, payloadHash);
-	const member = await db
-		.prepare(
-			"SELECT t.id,(SELECT COUNT(*) FROM team_repositories tr WHERE tr.team_id=t.id AND tr.active=1) AS repository_count,EXISTS(SELECT 1 FROM team_repositories tr WHERE tr.team_id=t.id AND tr.repository_id=? AND tr.active=1) AS selected_repository FROM team_members m JOIN teams t ON t.id=m.team_id WHERE m.github_id=? AND m.active=1 AND m.hackathon_id='initial' AND t.status='ACTIVE' LIMIT 1",
-		)
-		.bind(repo.repository_id, pr.user.id)
-		.first<{
-			id: string;
-			repository_count: number;
-			selected_repository: number;
-		}>();
-	const teamId = member?.repository_count === 1 && member.selected_repository
-			? member.id
-			: null,
-		mappingStatus = !member
+		const existing = await db.prepare("SELECT github_updated_at,head_sha,closed FROM unverified_pr_submissions WHERE repository_id=? AND pr_number=?")
+			.bind(selected.repository_id, pr.number).first<{ github_updated_at: string; head_sha: string; closed: number }>();
+		const mapping = await db.prepare(
+			"SELECT COUNT(DISTINCT t.id) AS matching_teams,MIN(t.id) AS team_id,MAX(t.track_finalized) AS track_finalized,MAX((SELECT COUNT(*) FROM team_repositories tr WHERE tr.team_id=t.id AND tr.active=1)) AS repository_count,MAX(EXISTS(SELECT 1 FROM team_repositories tr WHERE tr.team_id=t.id AND tr.repository_id=? AND tr.active=1)) AS selected_repository FROM console_identities i JOIN teams t ON t.id=i.team_id AND t.hackathon_id='initial' AND t.status='ACTIVE' JOIN team_members m ON m.id=COALESCE(i.team_member_id,(SELECT r.linked_team_member_id FROM team_roster_members r WHERE r.id=i.team_roster_member_id AND r.active=1)) AND m.team_id=t.id AND m.active=1 AND m.github_id=? WHERE i.role='participant' AND i.github_verified_at IS NOT NULL AND i.revoked_at IS NULL",
+		).bind(selected.repository_id, pr.user.id).first<{ matching_teams: number; team_id: string | null; track_finalized: number; repository_count: number; selected_repository: number }>();
+		const mappingStatus = !mapping?.matching_teams
 			? "MEMBER_NOT_REGISTERED"
-			: member.repository_count === 0
-			? "TRACK_NOT_SELECTED"
-			: member.repository_count !== 1
+			: mapping.matching_teams > 1
 			? "TRACK_CONFLICT"
-			: member.selected_repository
+			: mapping.track_finalized !== 1 || mapping.repository_count === 0
+			? "TRACK_NOT_SELECTED"
+			: mapping.repository_count === 0
+			? "TRACK_NOT_SELECTED"
+			: mapping.repository_count !== 1
+			? "TRACK_CONFLICT"
+			: mapping.selected_repository
 			? "MAPPED"
 			: "TRACK_MISMATCH";
-	if (current && current.updated_at > pr.updated_at) {
-		await record.run();
-		return json({ status: "stale" }, 202);
-	}
-	if (p.action === "closed") {
-		await db.batch([
-			record,
-			db
-				.prepare(
-					"INSERT INTO matrix_submissions(repository_id,pr_number,head_sha,updated_at,closed,latest_run_id,team_id,author_id,author_login,mapping_status) VALUES(?,?,?,?,1,?,?,?,?,?) ON CONFLICT(repository_id,pr_number) DO UPDATE SET closed=1,updated_at=excluded.updated_at,team_id=excluded.team_id,author_id=excluded.author_id,author_login=excluded.author_login,mapping_status=excluded.mapping_status WHERE matrix_submissions.updated_at<=excluded.updated_at",
-				)
-				.bind(
-					repo.repository_id,
-					pr.number,
-					pr.head.sha,
-					pr.updated_at,
-					current?.latest_run_id ?? "closed",
-					teamId,
-					pr.user.id,
-					pr.user.login,
-					mappingStatus,
-				),
-			db
-				.prepare(
-					"UPDATE matrix_runs SET state='SUPERSEDED',updated_at=CURRENT_TIMESTAMP WHERE repository_id=? AND pr_number=? AND state IN ('QUEUED','RUNNING') AND EXISTS(SELECT 1 FROM matrix_submissions WHERE repository_id=? AND pr_number=? AND closed=1)",
-				)
-				.bind(
-					repo.repository_id,
-					pr.number,
-					repo.repository_id,
-					pr.number,
-				),
-		]);
-		return json({ status: "closed" });
-	}
-	if (current?.head_sha === pr.head.sha && !current.closed) {
-		await db.batch([
-			record,
-			db
-				.prepare(
-					"UPDATE matrix_submissions SET updated_at=?,team_id=?,author_id=?,author_login=?,mapping_status=? WHERE repository_id=? AND pr_number=? AND latest_run_id=? AND updated_at<=?",
-				)
-				.bind(
-					pr.updated_at,
-					teamId,
-					pr.user.id,
-					pr.user.login,
-					mappingStatus,
-					repo.repository_id,
-					pr.number,
-					current.latest_run_id,
-					pr.updated_at,
-				),
-		]);
-		const run = await db
-			.prepare("SELECT state FROM matrix_runs WHERE id=?")
-			.bind(current.latest_run_id)
-			.first<{ state: string }>();
-		if (run?.state === "QUEUED") {
-			await dispatchMatrix(env, current.latest_run_id);
+		const teamId = mappingStatus === "MAPPED" ? mapping?.team_id ?? null : null;
+		const recordDelivery = db.prepare("INSERT INTO matrix_deliveries(id,payload_hash) VALUES(?,?)")
+			.bind(delivery, payloadHash);
+		if (existing && existing.github_updated_at > pr.updated_at) {
+			await recordDelivery.run();
+			return json({ status: "stale" }, 202);
 		}
-		return json({ status: "duplicate", id: current.latest_run_id });
+		const preservedCheck = existing?.head_sha === pr.head.sha
+			? await db.prepare("SELECT check_run_id,check_status FROM unverified_pr_submissions WHERE repository_id=? AND pr_number=?")
+				.bind(selected.repository_id, pr.number).first<{ check_run_id: number | null; check_status: "PENDING" | "PUBLISHING" | "PUBLISHED" | "FAILED" }>()
+			: null;
+		await db.batch([
+			recordDelivery,
+			db.prepare("INSERT INTO unverified_pr_submissions(repository_id,pr_number,action,head_sha,github_updated_at,closed,delivery_id,payload_hash,author_id,author_login,team_id,mapping_status,check_run_id,check_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(repository_id,pr_number) DO UPDATE SET action=excluded.action,head_sha=excluded.head_sha,github_updated_at=excluded.github_updated_at,closed=excluded.closed,delivery_id=excluded.delivery_id,payload_hash=excluded.payload_hash,author_id=excluded.author_id,author_login=excluded.author_login,team_id=excluded.team_id,mapping_status=excluded.mapping_status,check_run_id=CASE WHEN unverified_pr_submissions.head_sha=excluded.head_sha THEN unverified_pr_submissions.check_run_id ELSE NULL END,check_status=CASE WHEN unverified_pr_submissions.head_sha=excluded.head_sha THEN unverified_pr_submissions.check_status ELSE 'PENDING' END,updated_at=CURRENT_TIMESTAMP WHERE unverified_pr_submissions.github_updated_at<=excluded.github_updated_at")
+				.bind(selected.repository_id, pr.number, p.action, pr.head.sha, pr.updated_at, pr.state === "closed" ? 1 : 0, delivery, payloadHash, pr.user.id, pr.user.login, teamId, mappingStatus, preservedCheck?.check_run_id ?? null, preservedCheck?.check_status ?? "PENDING"),
+		]);
+		const publishedRow = { repository_id: selected.repository_id, full_name: selected.full_name, pr_number: pr.number, head_sha: pr.head.sha, check_run_id: preservedCheck?.check_run_id ?? null };
+		if (pr.state === "open") {
+			if (env.DEFAULT_PR_REVIEWER === "Kevin272-dot") {
+				const reviewerTask = requestDefaultReviewerForUnconfiguredPR(env, db, selected, pr.number, dependencies.clientFactory);
+				if (dependencies.deferReviewer) dependencies.deferReviewer(reviewerTask);
+				else await reviewerTask;
+			}
+			const checkTask = dependencies.publishCheck
+				? dependencies.publishCheck(publishedRow)
+				: publishUnverifiedPRCheck(env, db, publishedRow);
+			if (dependencies.deferPublication) dependencies.deferPublication(checkTask);
+			else await checkTask;
+		}
+		return json({ status: existing?.head_sha === pr.head.sha ? "updated" : "accepted", verification: "UNVERIFIED", marks: null }, 202);
 	}
-	const id = await digest(
-		canonical({
-			repo: repo.repository_id,
-			pr: pr.number,
-			head: pr.head.sha,
-			matrix: repo.matrix_digest,
-			image: repo.image_uri,
-			baseline: repo.baseline_sha,
-			delivery,
-		}),
-	);
-	await db.batch([
-		record,
-		db
-			.prepare(
-				"INSERT INTO matrix_submissions(repository_id,pr_number,head_sha,updated_at,closed,latest_run_id,team_id,author_id,author_login,mapping_status) VALUES(?,?,?,?,0,?,?,?,?,?) ON CONFLICT(repository_id,pr_number) DO UPDATE SET head_sha=excluded.head_sha,updated_at=excluded.updated_at,closed=0,latest_run_id=excluded.latest_run_id,team_id=excluded.team_id,author_id=excluded.author_id,author_login=excluded.author_login,mapping_status=excluded.mapping_status WHERE matrix_submissions.updated_at<=excluded.updated_at",
-			)
-			.bind(
-				repo.repository_id,
-				pr.number,
-				pr.head.sha,
-				pr.updated_at,
-				id,
-				teamId,
-				pr.user.id,
-				pr.user.login,
-				mappingStatus,
-			),
-		db
-			.prepare(
-				"INSERT OR IGNORE INTO matrix_runs(id,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,publication_status) SELECT ?,?,?,?,?,?,?,?,?,'NOTICE_ONLY' WHERE EXISTS(SELECT 1 FROM matrix_submissions WHERE repository_id=? AND pr_number=? AND latest_run_id=?)",
-			)
-			.bind(
-				id,
-				repo.repository_id,
-				repo.full_name,
-				pr.number,
-				pr.head.sha,
-				repo.baseline_sha,
-				repo.matrix_version,
-				repo.matrix_digest,
-				repo.image_uri,
-				repo.repository_id,
-				pr.number,
-				id,
-			),
-		db
-			.prepare(
-				"UPDATE matrix_runs SET state='SUPERSEDED',updated_at=CURRENT_TIMESTAMP WHERE repository_id=? AND pr_number=? AND id<>(SELECT latest_run_id FROM matrix_submissions WHERE repository_id=? AND pr_number=?) AND state IN ('QUEUED','RUNNING')",
-			)
-			.bind(repo.repository_id, pr.number, repo.repository_id, pr.number),
-	]);
-	const inserted = await db
-		.prepare("SELECT id FROM matrix_runs WHERE id=?")
-		.bind(id)
-		.first();
-	if (inserted) await dispatchMatrix(env, id);
-	return json({ id, status: inserted ? "queued" : "stale" }, 202);
+	// The two historical pilots are kept for read-only history. They are not
+	// eligible for new PR intake or dispatch in the production competition.
+	return json({ error: "MATRIX_REPOSITORY_NOT_AUTHORIZED" }, 403);
 }
 function decode(run: MatrixRun) {
 	return { ...run, report: run.report ? JSON.parse(run.report) : null };
@@ -441,49 +312,13 @@ export async function matrixApi(request: Request, env: Env) {
 		return json(await matrixBudget(db, env));
 	}
 	if (request.method === "POST" && path === "/api/matrix/diagnostic") {
-		const body = z
-			.object({
-				repository: z.enum(["noyyal-treasury", "rasoi-offer-roulette"]),
-				files: z.unknown(),
-			})
-			.strict()
-			.parse(
-				JSON.parse(
-					new TextDecoder().decode(
-						await boundedBody(request, 2200000),
-					),
-				),
-			);
-		const files = validateSnapshot(body.files);
-		const repo = await db
-			.prepare(
-				"SELECT image_uri FROM matrix_repositories WHERE full_name=?",
-			)
-			.bind("180DC-VIT-CHENNAI/" + body.repository)
-			.first<{ image_uri: string }>();
-		const namespace = body.repository === "noyyal-treasury"
-			? env.NOYYAL_MATRIX
-			: env.RASOI_MATRIX;
-		if (!namespace || !repo) {
-			return json({ error: "MATRIX_NOT_CONFIGURED" }, 503);
-		}
-		const stub = namespace.get(namespace.newUniqueId()) as unknown as {
-			evaluate(value: unknown): Promise<unknown>;
-		};
-		return json({
-			mode: "diagnostic",
-			result: await stub.evaluate({
-				...body,
-				files,
-				image: repo.image_uri,
-			}),
-		});
+		return json({ error: "MATRIX_REPOSITORY_NOT_AUTHORIZED" }, 403);
 	}
 	if (request.method === "GET" && path === "/api/matrix/overview") {
 		const [repositories, runs] = await Promise.all([
 			db
 				.prepare(
-					"SELECT g.id,g.full_name,m.baseline_sha,m.matrix_version,m.matrix_digest,m.image_uri FROM github_repositories g LEFT JOIN matrix_repositories m ON m.repository_id=g.id WHERE g.accessible=1",
+				"SELECT g.id,g.full_name,m.baseline_sha,m.matrix_version,m.matrix_digest,m.image_uri FROM github_repositories g LEFT JOIN matrix_repositories m ON m.repository_id=g.id WHERE g.accessible=1 AND g.full_name IN ('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus')",
 				)
 				.all<{
 					id: number;
@@ -523,30 +358,21 @@ export async function matrixApi(request: Request, env: Env) {
 		if (!isMatrixOriginAllowed(request, env)) {
 			return json({ error: "ORIGIN_NOT_ALLOWED" }, 403);
 		}
-		if (!["FAILED", "COMPLETED"].includes(run.state)) {
-			return json({ error: "RETRY_NOT_AVAILABLE" }, 409);
+		if (!specificationRequiredRepositories.includes(run.full_name as typeof specificationRequiredRepositories[number])) {
+			return json({ error: "MATRIX_REPOSITORY_NOT_AUTHORIZED" }, 403);
 		}
+		const approved = await db.prepare("SELECT 1 FROM matrix_profile_approvals a JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri WHERE a.repository_id=? AND a.matrix_digest=? AND a.image_uri=?")
+			.bind(run.repository_id, run.matrix_digest, run.image_uri).first();
+		if (!approved) return json({ error: "MATRIX_PROFILE_NOT_APPROVED" }, 409);
+		if (!["FAILED", "COMPLETED"].includes(run.state)) return json({ error: "RETRY_NOT_AVAILABLE" }, 409);
 		const id = await digest(crypto.randomUUID());
 		await db.batch([
-			db
-				.prepare(
-					"UPDATE matrix_submissions SET latest_run_id=? WHERE repository_id=? AND pr_number=? AND latest_run_id=? AND closed=0",
-				)
+			db.prepare("UPDATE matrix_submissions SET latest_run_id=? WHERE repository_id=? AND pr_number=? AND latest_run_id=? AND closed=0")
 				.bind(id, run.repository_id, run.pr_number, run.id),
-			db
-				.prepare(
-					"INSERT INTO matrix_runs(id,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,attempt,publication_status) SELECT ?,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,attempt+1,'NOTICE_ONLY' FROM matrix_runs WHERE id=? AND EXISTS(SELECT 1 FROM matrix_submissions WHERE repository_id=? AND pr_number=? AND latest_run_id=?)",
-				)
+			db.prepare("INSERT INTO matrix_runs(id,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,attempt,publication_status) SELECT ?,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,attempt+1,'NOTICE_ONLY' FROM matrix_runs WHERE id=? AND EXISTS(SELECT 1 FROM matrix_submissions WHERE repository_id=? AND pr_number=? AND latest_run_id=?)")
 				.bind(id, run.id, run.repository_id, run.pr_number, id),
 		]);
-		if (
-			!(await db
-				.prepare("SELECT id FROM matrix_runs WHERE id=?")
-				.bind(id)
-				.first())
-		) {
-			return json({ error: "SUBMISSION_SUPERSEDED" }, 409);
-		}
+		if (!(await db.prepare("SELECT id FROM matrix_runs WHERE id=?").bind(id).first())) return json({ error: "SUBMISSION_SUPERSEDED" }, 409);
 		await dispatchMatrix(env, id);
 		return json({ id }, 202);
 	}

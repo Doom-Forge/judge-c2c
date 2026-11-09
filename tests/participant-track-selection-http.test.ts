@@ -116,6 +116,8 @@ beforeEach(async () => {
 	await db
 		.prepare("INSERT INTO teams(id,name) VALUES('team-a','Team A')")
 		.run();
+	await db.prepare("UPDATE teams SET hackathon_id='initial',status='ACTIVE',lead_email='lead@example.test' WHERE id='team-a'").run();
+	await db.prepare("INSERT INTO team_roster_members(id,team_id,hackathon_id,display_name,email) VALUES('lead-roster','team-a','initial','Team Lead','lead@example.test')").run();
 	for (
 		const [index, name] of [
 			"mazhai-cover",
@@ -139,7 +141,7 @@ beforeEach(async () => {
 		.run();
 	await db
 		.prepare(
-			"INSERT INTO console_identities(id,name,role,team_id,credential_hash) VALUES(?, 'Team A','participant','team-a',?),(?, 'Organizer','organizer',NULL,?)",
+			"INSERT INTO console_identities(id,name,role,team_id,team_roster_member_id,credential_hash) VALUES(?, 'Team A','participant','team-a','lead-roster',?),(?, 'Organizer','organizer',NULL,NULL,?)",
 		)
 		.bind(participantId, "b".repeat(64), organizerId, "c".repeat(64))
 		.run();
@@ -201,7 +203,7 @@ describe("participant repository selection through the Worker fetch surface", ()
 		});
 	});
 
-	it("locks track changes after an engineering draft or final review while allowing the current track", async () => {
+	it("finalizes the lead's first selection even when an engineering review draft exists", async () => {
 		const repositoryB = await env.ORG_DB!.prepare(
 			"SELECT id FROM github_repositories WHERE full_name='180DC-VIT-CHENNAI/mazhai-cover'",
 		).first<{ id: number }>();
@@ -215,25 +217,26 @@ describe("participant repository selection through the Worker fetch surface", ()
 		await env.ORG_DB!.prepare(
 			"INSERT INTO round_two_review_drafts(team_id,judge_identity_id,stage,score,payload) VALUES('team-a','judge-a','ENGINEERING',85,'{}')",
 		).run();
-		const locked = await worker.fetch(
+		const selected = await worker.fetch(
 			request("/api/organization/participant/track", "POST", { repositoryId: repositoryB!.id }),
 			env,
 			ctx,
 		);
-		const unchanged = await worker.fetch(
+		const rejectedSwitch = await worker.fetch(
 			request("/api/organization/participant/track", "POST", { repositoryId: 11 }),
 			env,
 			ctx,
 		);
-		expect([locked.status, await locked.json(), unchanged.status]).toEqual([
-			409,
-			{ error: "TRACK_LOCKED" },
+		expect([selected.status, await selected.json(), rejectedSwitch.status, await rejectedSwitch.json()]).toEqual([
 			200,
+			{ track: { repositoryId: repositoryB!.id, fullName: "180DC-VIT-CHENNAI/mazhai-cover" } },
+			409,
+			{ error: "TRACK_FINALIZED" },
 		]);
-		expect(await activeRepositoryIds(env.ORG_DB!)).toEqual([{ repository_id: 11 }]);
+		expect(await activeRepositoryIds(env.ORG_DB!)).toEqual([{ repository_id: repositoryB!.id }]);
 	});
 
-	it("locks track changes after an engineering final review", async () => {
+	it("allows the lead to finalize their first selection after an engineering final review", async () => {
 		const repositoryB = await env.ORG_DB!.prepare(
 			"SELECT id FROM github_repositories WHERE full_name='180DC-VIT-CHENNAI/mazhai-cover'",
 		).first<{ id: number }>();
@@ -252,10 +255,7 @@ describe("participant repository selection through the Worker fetch surface", ()
 			env,
 			ctx,
 		);
-		expect([response.status, await response.json()]).toEqual([
-			409,
-			{ error: "TRACK_LOCKED" },
-		]);
+		expect([response.status, await response.json()]).toEqual([200, { track: { repositoryId: repositoryB!.id, fullName: "180DC-VIT-CHENNAI/mazhai-cover" } }]);
 	});
 
 	it("denies track options to organizer and anonymous sessions", async () => {
@@ -303,9 +303,7 @@ describe("participant repository selection through the Worker fetch surface", ()
 			env,
 			ctx,
 		);
-		const dashboard = (await dashboardResponse.json()) as {
-			track: { repositoryId: number; fullName: string };
-		};
+		const dashboard = await dashboardResponse.json() as { error: string };
 		const audit = await env.ORG_DB!.prepare(
 			"SELECT changes FROM audit WHERE action='team.track_selected'",
 		).first<string>("changes");
@@ -314,7 +312,8 @@ describe("participant repository selection through the Worker fetch surface", ()
 			cacheControl: response.headers.get("cache-control"),
 			track: body.track,
 			active: await activeRepositoryIds(env.ORG_DB!),
-			dashboardTrack: dashboard.track,
+			dashboardStatus: dashboardResponse.status,
+			dashboardError: dashboard.error,
 			audit: JSON.parse(audit ?? "{}"),
 		}).toEqual({
 			status: 200,
@@ -324,10 +323,8 @@ describe("participant repository selection through the Worker fetch surface", ()
 				fullName: "180DC-VIT-CHENNAI/pricingpulse",
 			},
 			active: [{ repository_id: 11 }],
-			dashboardTrack: {
-				repositoryId: 11,
-				fullName: "180DC-VIT-CHENNAI/pricingpulse",
-			},
+			dashboardStatus: 428,
+			dashboardError: "PARTICIPANT_ONBOARDING_REQUIRED",
 			audit: {
 				eventId: expect.any(String),
 				previousRepositoryIds: [14],
@@ -417,26 +414,22 @@ describe("participant repository selection through the Worker fetch surface", ()
 
 	it("leaves one active track when two selections race", async () => {
 		const db = env.ORG_DB!;
-		const operation = pauseFirstTrackOperation(db);
-		env.ORG_DB = operation.database;
-		const firstRequest = worker.fetch(
+		const [firstResponse, secondResponse] = await Promise.all([
+		worker.fetch(
 			request("/api/organization/participant/track", "POST", {
 				repositoryId: 11,
 			}),
 			env,
 			ctx,
-		);
-		await operation.started;
-		const secondResponse = await worker.fetch(
+		),
+		worker.fetch(
 			request("/api/organization/participant/track", "POST", {
 				repositoryId: 12,
 			}),
 			env,
 			ctx,
-		);
-		operation.release();
-		const firstResponse = await firstRequest;
-		env.ORG_DB = db;
+		),
+		]);
 		const changes = (
 			await db
 				.prepare(
@@ -449,20 +442,11 @@ describe("participant repository selection through the Worker fetch surface", ()
 				repositoryId: number;
 			}
 		);
-		expect([firstResponse.status, secondResponse.status]).toEqual([
-			200,
-			200,
-		]);
-		expect(changes).toHaveLength(2);
+		expect([firstResponse.status, secondResponse.status].sort()).toEqual([200, 409]);
+		expect(changes).toHaveLength(1);
 		expect(changes[0]?.previousRepositoryIds).toEqual([14]);
-		expect(changes[1]?.previousRepositoryIds).toEqual([
-			changes[0]?.repositoryId,
-		]);
-		expect(changes[1]?.repositoryId).not.toBe(
-			changes[0]?.repositoryId,
-		);
 		expect(await activeRepositoryIds(db)).toEqual([
-			{ repository_id: changes[1]?.repositoryId },
+			{ repository_id: changes[0]?.repositoryId },
 		]);
 	});
 
@@ -478,26 +462,22 @@ describe("participant repository selection through the Worker fetch surface", ()
 				"INSERT INTO team_repositories(team_id,repository_id,actor) VALUES('team-a',11,'organizer:test')",
 			)
 			.run();
-		const operation = pauseFirstTrackOperation(db);
-		env.ORG_DB = operation.database;
-		const sameTrackRequest = worker.fetch(
+		const [sameTrackResponse, switchResponse] = await Promise.all([
+		worker.fetch(
 			request("/api/organization/participant/track", "POST", {
 				repositoryId: 11,
 			}),
 			env,
 			ctx,
-		);
-		await operation.started;
-		const switchResponse = await worker.fetch(
+		),
+		worker.fetch(
 			request("/api/organization/participant/track", "POST", {
 				repositoryId: 12,
 			}),
 			env,
 			ctx,
-		);
-		operation.release();
-		const sameTrackResponse = await sameTrackRequest;
-		env.ORG_DB = db;
+		),
+		]);
 		const sameTrackBody = await sameTrackResponse.json();
 		expect([
 			switchResponse.status,
@@ -505,14 +485,9 @@ describe("participant repository selection through the Worker fetch surface", ()
 			sameTrackBody,
 			await activeRepositoryIds(db),
 		]).toEqual([
+			409,
 			200,
-			200,
-			{
-				track: {
-					repositoryId: 11,
-					fullName: "180DC-VIT-CHENNAI/pricingpulse",
-				},
-			},
+			{ track: { repositoryId: 11, fullName: "180DC-VIT-CHENNAI/pricingpulse" } },
 			[{ repository_id: 11 }],
 		]);
 	});
@@ -557,13 +532,13 @@ describe("participant repository selection through the Worker fetch surface", ()
 			status: 200,
 			track: {
 				repositoryId: 11,
-				fullName: "180DC-VIT-CHENNAI/mazhai-cover",
+				fullName: "180DC-VIT-CHENNAI/pricingpulse",
 			},
 			audit: {
 				eventId: expect.any(String),
 				previousRepositoryIds: [14],
 				repositoryId: 11,
-				fullName: "180DC-VIT-CHENNAI/mazhai-cover",
+				fullName: "180DC-VIT-CHENNAI/pricingpulse",
 			},
 			active: [{ repository_id: 11 }],
 		});

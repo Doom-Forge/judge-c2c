@@ -212,3 +212,45 @@ test("live organizer can sync GitHub repositories, provision a judge, publish a 
 	await page.getByRole("button", { name: "Publish announcement" }).click();
 	await expect(page.getByText("Round 2 is open")).toBeVisible();
 });
+
+test("super admin inspects participant and judge dashboards without impersonation or mutations", async ({ page }) => {
+	const writes: string[] = [];
+	let finalScoreRequests = 0;
+	await page.route("**/api/organization/**", async route => {
+		const request = route.request();
+		const url = new URL(request.url());
+		const path = url.pathname;
+		if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method())) writes.push(`${request.method()} ${path}`);
+		if (path === "/api/organization/status") return route.fulfill({ json: { authenticated: true, role: "organizer", identity: { id: null, name: "Super admin", role: "organizer", teamId: null } } });
+		if (path === "/api/organization/manage/teams") return route.fulfill({ json: { teams: [{ id: "team-1", name: "Team One", status: "ACTIVE", lead_email: "lead@example.test", member_count: 1, submission_count: 1, github_members: "@lead" }], nextCursor: null } });
+		if (path === "/api/organization/manage/teams/team-1") return route.fulfill({ json: { team: { id: "team-1", name: "Team One", status: "ACTIVE", lead_email: "lead@example.test" }, members: [{ id: "member-1", display_name: "Team Lead", email: "lead@example.test", github_login: "lead", github_id: 123, active: 1 }] } });
+		if (path === "/api/organization/manage/overview") return route.fulfill({ json: { counts: { teams: 1, activeTeams: 1, notSubmitted: 0 } } });
+		if (path === "/api/organization/round-two/teams") return route.fulfill({ json: { teams: [{ id: "team-1", name: "Team One", status: "ACTIVE", submission_count: 1, document_count: 1 }], deadlines: null } });
+		if (path === "/api/organization/round-two/assignments") return route.fulfill({ json: { assignments: [{ id: "assignment-1", judge_identity_id: "judge-1", judge_name: "Judge One", team_id: "team-1", team_name: "Team One", assigned_at: "2026-11-09T10:00:00Z", revoked_at: null }] } });
+		if (path === "/api/organization/round-two/teams/team-1") return route.fulfill({ json: { team: { id: "team-1", name: "Team One", status: "ACTIVE" }, members: [{ id: "member-1", display_name: "Team Lead", github_login: "lead" }], repositories: [{ id: 17, full_name: "180DC-VIT-CHENNAI/mazhai-cover", default_branch: "main" }], submissions: [{ repository_id: 17, pr_number: 7, head_sha: "abc123def456", author_login: "lead", status: "OPEN", github_updated_at: "2026-11-09T10:00:00Z", full_name: "180DC-VIT-CHENNAI/mazhai-cover" }], documents: [{ id: "doc-1", version: 1, filename: "analysis.pdf", bytes: 1024, status: "STORED", created_at: "2026-11-09T09:00:00Z" }], matrixSubmissions: [], unverifiedPullRequests: [{ repository_id: 17, full_name: "180DC-VIT-CHENNAI/mazhai-cover", pr_number: 7, head_sha: "abc123def456", author_login: "lead", check_status: "PENDING", closed: 0 }] } });
+		if (path === "/api/organization/round-two/results") return route.fulfill({ json: { results: [{ teamId: "team-1", finalScore: null, status: "PENDING" }] } });
+		if (path === "/api/organization/round-two/reviews" && request.method() === "GET") {
+			expect(url.searchParams.get("judgeIdentityId")).toBe("judge-1");
+			return route.fulfill({ json: { currentDocument: { id: "doc-1", version: 1, filename: "analysis.pdf", created_at: "2026-11-09T09:00:00Z" }, rubric: null, rubricError: null, documentStale: false, draft: null, drafts: [], submissions: url.searchParams.get("stage") === "ANALYSIS" ? [{ id: "review-1", score: 82, payload: { overall: "Clear evidence." }, document_id: "doc-1", revision: 1, reason: "Initial review", submitted_at: "2026-11-09T11:00:00Z", scoreShared: false }] : [] } });
+		}
+		if (path.endsWith("/results/final-score")) { finalScoreRequests += 1; return route.fulfill({ status: 403, json: { error: "JUDGE_REQUIRED" } }); }
+		if (path === "/api/organization/manage/deadlines") return route.fulfill({ json: { analysisDocumentDeadline: null, pullRequestDeadline: null } });
+		if (path === "/api/organization/manage/team-email") return route.fulfill({ json: { enabled: false, subject: "", body: "", senderConfigured: true, recentDeliveries: [] } });
+		return route.fulfill({ status: 404, json: { error: `UNEXPECTED ${path}` } });
+	});
+	await page.goto("/teams");
+	await page.getByRole("link", { name: "Inspect dashboards" }).click();
+	await expect(page.getByRole("heading", { name: "Team One" })).toBeVisible();
+	await expect(page.getByText("lead@example.test", { exact: true })).toBeVisible();
+	await expect(page.getByText("180DC-VIT-CHENNAI/mazhai-cover", { exact: true })).toBeVisible();
+	await expect(page.getByText("analysis.pdf")).toBeVisible();
+	await expect(page.getByText("UNVERIFIED", { exact: true })).toBeVisible();
+	await expect(page.getByLabel(/team key/i)).toHaveCount(0);
+	await page.getByRole("link", { name: "Inspect Judge One" }).click();
+	await expect(page.getByRole("heading", { name: "Judge dashboard inspection" })).toBeVisible();
+	await expect(page.getByRole("textbox", { name: "Overall feedback" })).toHaveValue("Clear evidence.");
+	await expect(page.getByRole("button", { name: /Save draft|Submit review|Share stage score|Finalize official team score/ })).toHaveCount(0);
+	await expect(page.getByRole("heading", { name: "Official team score" })).toHaveCount(0);
+	await expect.poll(() => finalScoreRequests).toBe(0);
+	expect(writes).toEqual([]);
+});

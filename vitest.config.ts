@@ -10,6 +10,9 @@ export default defineConfig({
       'cloudflare:workers': fileURLToPath(
         new NodeURL('./tests/fixtures/cloudflare-workers.ts', import.meta.url),
       ),
+      'cloudflare:sockets': fileURLToPath(
+        new NodeURL('./tests/fixtures/cloudflare-sockets.ts', import.meta.url),
+      ),
     },
   },
   // Each runtime suite starts workerd/D1. Bound the number of these processes

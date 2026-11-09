@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
 import {
-	calculateDisplayedFinalScore,
 	displayedStageScore,
 	transitionConfirmation,
 } from "../src/features/organizer/results/score-display";
@@ -10,9 +9,11 @@ test("pending stage scores stay distinct from a real zero", () => {
 	expect(displayedStageScore(0)).toBe("0.0");
 });
 
-test("final score uses the 10/90 stage weighting", () => {
-	expect(calculateDisplayedFinalScore(50, 80)).toBe(77);
-	expect(calculateDisplayedFinalScore(null, 80)).toBeNull();
+test("official score display never derives a final mark from stage averages", () => {
+	// The result table receives the official mark from the judge finalization record;
+	// stage averages remain separate reference data.
+	expect(displayedStageScore(null)).toBe("Pending");
+	expect(displayedStageScore(77)).toBe("77.0");
 });
 
 test("freeze and publication transitions require a reason confirmation", () => {

@@ -45,9 +45,15 @@ beforeEach(async () => {
       "INSERT INTO teams(id,name) VALUES('team-a','Team A'),('team-b','Team B')",
     )
     .run();
+  await db.prepare("UPDATE teams SET hackathon_id='initial',status='ACTIVE',lead_email='lead@example.test' WHERE id='team-a'").run();
+  await db.prepare("UPDATE teams SET hackathon_id='initial',status='ACTIVE' WHERE id='team-b'").run();
+  await db.prepare("INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(10,'180DC-VIT-CHENNAI/mazhai-cover',0,'main')").run();
+  await db.prepare("INSERT INTO team_repositories(team_id,repository_id,actor) VALUES('team-a',10,'organizer:test')").run();
+  await db.prepare("UPDATE teams SET track_finalized=1 WHERE id='team-a'").run();
+  await db.prepare("INSERT INTO team_roster_members(id,team_id,hackathon_id,display_name,email) VALUES('lead-roster','team-a','initial','Team Lead','lead@example.test')").run();
   await db
     .prepare(
-      "INSERT INTO console_identities(id,name,role,team_id,credential_hash) VALUES('participant-identity','Team A lead','participant','team-a',?)",
+      "INSERT INTO console_identities(id,name,role,team_id,team_roster_member_id,github_verified_at,credential_hash) VALUES('participant-identity','Team A lead','participant','team-a','lead-roster','2026-11-09',?)",
     )
     .bind('a'.repeat(64))
     .run();

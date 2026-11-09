@@ -101,81 +101,139 @@ button {
 }
 
 .session-page {
-  position: relative;
+	position: relative;
   display: grid;
-  min-height: 100vh;
+	min-height: 100svh;
   place-items: center;
-  overflow: hidden;
-  padding: clamp(20px, 5vw, 64px);
+	padding: clamp(20px, 5vw, 56px);
   background:
-    radial-gradient(ellipse at 84% 16%, #7ca69b27, transparent 34%),
-    linear-gradient(135deg, #f4f1e8 0%, #ece9df 100%);
+		radial-gradient(ellipse at 50% 12%, #a4ed2910, transparent 36%),
+		#050605;
+	color: #f3f5ed;
 }
 .session-page::before {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: min(24vw, 320px);
-  background: var(--sidebar);
-  content: '';
+	display: none;
 }
 .session-login-card {
   position: relative;
   display: grid;
-  width: min(100%, 480px);
-  gap: 16px;
-  border: 1px solid #d5d8cf;
-  border-radius: 14px;
-  background: var(--card);
-  padding: clamp(24px, 4vw, 42px);
-  box-shadow: 0 24px 70px #17211d20;
+	width: min(100%, 490px);
+	gap: 16px;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	padding: 0;
+	box-shadow: none;
 }
-.session-login-card > svg {
-  width: 26px;
-  height: 26px;
-  color: var(--accent);
+.session-wordmark {
+	margin: 0 0 10px;
+	color: #f3f5ed;
+	font-size: clamp(44px, 8vw, 76px);
+	font-weight: 780;
+	letter-spacing: -.075em;
+	line-height: .95;
+	text-align: center;
+}
+.session-kicker {
+	margin: 0;
+	color: #b5e86b;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: .18em;
+	line-height: 1.4;
+	text-align: center;
+	text-transform: uppercase;
 }
 .session-login-card h1 {
   margin: 0;
-  font-size: clamp(27px, 4vw, 36px);
-  font-weight: 680;
-  letter-spacing: -0.045em;
-  line-height: 1.1;
+	font-size: 26px;
+	font-weight: 650;
+	letter-spacing: -.035em;
+	line-height: 1.15;
+	text-align: center;
 }
 .session-login-card > p {
   margin: 0;
-  color: var(--muted);
+	color: #b6bbb2;
+}
+.session-login-card .session-intro {
+	max-width: 42ch;
+	margin: -7px auto 2px;
+	font-size: 14px;
+	line-height: 1.55;
+	text-align: center;
 }
 .session-login {
   display: grid;
+	gap: 12px;
+	margin-top: 8px;
+}
+.participant-signin-step {
+  display: grid;
   gap: 10px;
-  margin-top: 4px;
+  min-width: 0;
+  margin: 8px 0 0;
+	border: 1px solid #343a31;
+	border-radius: 9px;
+	background: #0b0d0a;
+  padding: 14px;
+}
+.participant-signin-step legend {
+  padding: 0 6px;
+	color: #b5e86b;
+  font-size: 13px;
+  font-weight: 700;
+}
+.participant-signin-step label span {
+	color: #a3aaa0;
+  font-weight: 450;
 }
 .session-login label {
   margin-top: 6px;
-  font-size: 14px;
-  font-weight: 650;
+	color: #e9ede4;
+	font-size: 13px;
+	font-weight: 650;
 }
 .session-login input {
   width: 100%;
-  min-height: 48px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: #fbfaf4;
+	min-height: 50px;
+	border: 1px solid #444a40;
+	border-radius: 7px;
+	background: #0b0d0a;
   padding: 0 12px;
+	color: #f3f5ed;
 }
-.session-login button[type='submit'] {
+.session-login input::placeholder {
+	color: #9da59a;
+}
+.session-login input:focus-visible {
+	border-color: #b5e86b;
+	outline: 2px solid #b5e86b;
+	outline-offset: 2px;
+}
+.session-login .session-submit {
   width: 100%;
-  min-height: 48px;
+	min-height: 52px;
   margin-top: 8px;
-  color: #fffdf7;
+	border: 1px solid #b5e86b;
+	background: transparent;
+	color: #c5f57b;
+	font-size: 14px;
+	letter-spacing: .02em;
+	transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.session-login .session-submit:hover:not(:disabled) {
+	border-color: #c5f57b;
+	background: #c5f57b;
+	color: #10140c;
 }
 .session-login [role='alert'] {
   margin: 0;
-  border: 1px solid #e2c3be;
-  border-radius: 7px;
-  background: #f8ece8;
+	border: 1px solid #92534d;
+	border-radius: 7px;
+	background: #21100f;
   padding: 10px 12px;
-  color: #873d38;
+	color: #ffb9b1;
   font-size: 14px;
 }
 .session-login .session-mode-toggle {
@@ -184,7 +242,7 @@ button {
   border-radius: 6px;
   background: transparent;
   padding: 10px 8px;
-  color: var(--accent);
+	color: #c5f57b;
   font-size: 14px;
   font-weight: 650;
   text-align: center;
@@ -192,15 +250,34 @@ button {
   cursor: pointer;
 }
 .session-login .session-mode-toggle:hover {
-  background: #eaf0e9;
+	background: #b5e86b14;
+	text-decoration: underline;
 }
-.session-login-card > svg + h1 {
-  margin-top: 0;
+.session-login-card .text-xs {
+	color: #b6bbb2;
 }
+.session-unconfigured {
+	align-content: center;
+	justify-items: center;
+	color: #f3f5ed;
+	text-align: center;
+}
+.session-unconfigured > svg { width: 28px; height: 28px; color: #b5e86b; }
+.session-unconfigured h1 { margin: 12px 0; font-size: clamp(24px, 5vw, 36px); }
+.session-unconfigured p { max-width: 52ch; color: #b6bbb2; line-height: 1.6; }
 @media (max-width: 640px) {
   .session-page::before {
-    width: 12px;
+		display: none;
+	}
+	.session-login-card {
+		width: min(100%, 440px);
+	}
+	.session-login-card h1 {
+		font-size: 23px;
   }
+}
+@media (prefers-reduced-motion: reduce) {
+	.session-login .session-submit { transition: none; }
 }
 .sidebar {
   position: fixed;

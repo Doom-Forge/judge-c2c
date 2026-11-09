@@ -88,6 +88,29 @@ afterEach(async () => {
 });
 
 describe("judge access to attributed Matrix pull requests", () => {
+	it("exposes an unverified PR with source attribution and no marks", async () => {
+		await env.ORG_DB!.prepare("INSERT INTO matrix_deliveries(id,payload_hash) VALUES('delivery-unverified',?)")
+			.bind("a".repeat(64)).run();
+		await env.ORG_DB!.prepare("INSERT INTO unverified_pr_submissions(repository_id,pr_number,action,head_sha,github_updated_at,closed,delivery_id,payload_hash,author_id,author_login,team_id,mapping_status) VALUES(1,13,'opened',?,'2026-11-08T10:00:00Z',0,'delivery-unverified',?,9002,'member-two','team-a','MAPPED')")
+			.bind("b".repeat(40), "a".repeat(64)).run();
+		const response = await roundTwoReview(request("/teams/team-a"), env, organizer);
+		const result = await response.json() as { unverifiedPullRequests: { pr_number: number; author_id: number; evaluationStatus: string; marks: number | null; categories: Record<string, string> }[] };
+		expect(result.unverifiedPullRequests).toMatchObject([{
+			pr_number: 13,
+			author_id: 9002,
+			evaluationStatus: "UNVERIFIED",
+			marks: null,
+			categories: {
+				functionalCorrectness: "UNVERIFIED",
+				security: "UNVERIFIED",
+				performanceAndScalability: "UNVERIFIED",
+				codeQuality: "UNVERIFIED",
+				innovationAndUsefulness: "UNVERIFIED",
+				reproducibility: "UNVERIFIED",
+			},
+		}]);
+	});
+
 	it("shows verified team pull requests to an assigned judge", async () => {
 		await roundTwoReview(
 			request("/assignments", "POST", {
