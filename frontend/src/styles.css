@@ -167,6 +167,7 @@ button {
   width: 100%;
   min-height: 48px;
   margin-top: 8px;
+  color: #fffdf7;
 }
 .session-login [role='alert'] {
   margin: 0;
