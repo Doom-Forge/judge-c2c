@@ -276,6 +276,9 @@
   }
 }
 .app-shell .results-demo-notice { border-color: #665535; background: #211d13; color: #f0d59b; }
+.app-shell .results-state-error,
+.app-shell .results-dialog-error { border-color: #77443d; background: #281513; color: #ffb7ad; }
+.app-shell .results-state-error button { border-color: #68423d; background: #351d1a; color: #ffe2dc; }
 .app-shell .results-card { border: 1px solid #303a31; background: #111512; box-shadow: 0 12px 30px #0003; }
 .app-shell .results-card-header { border-color: #303a31; }
 .app-shell .results-table thead { background: #191f1a; }

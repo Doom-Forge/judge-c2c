@@ -27,6 +27,10 @@ test("mobile judge navigation opens, follows live routes, and closes", async ({ 
 			} : { authenticated: false }),
 		}),
 	);
+	await page.route("**/api/organization/logout", async route => {
+		authenticated = false;
+		return route.fulfill({ json: { ok: true } });
+	});
 	await page.route("**/api/organization/round-two/teams", (route) =>
 		route.fulfill({ json: { teams: [], deadlines: null } }),
 	);
@@ -38,4 +42,11 @@ test("mobile judge navigation opens, follows live routes, and closes", async ({ 
 	await navigation.getByRole("link", { name: "History" }).click();
 	await expect(page).toHaveURL(/\/history$/);
 	await expect(page.getByRole("heading", { name: "Judge workspace" })).toBeVisible();
+	const signOut = page.getByRole("button", { name: "Sign out" });
+	await expect(signOut).toBeVisible();
+	const bounds = await signOut.boundingBox();
+	expect(bounds).not.toBeNull();
+	expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+	await signOut.click();
+	await expect(page.getByRole("heading", { name: "Sign in to Doomforge" })).toBeVisible();
 });

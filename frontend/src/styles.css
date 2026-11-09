@@ -331,6 +331,7 @@ button {
 .app-shell [class~='border-[#5A4938]'] { border-color: #665536; }
 .app-shell [class~='bg-[#2A191B]'] { background-color: #321c1a; }
 .app-shell [class~='border-[#60363A]'] { border-color: #74443f; }
+.app-shell button[class~='text-[#171411]'] { color: #10140c; }
 .app-shell .brand-copy strong { letter-spacing: .13em; }
 .app-shell .brand-copy small,
 .app-shell .nav-section-label { color: #9eaa9d; }
@@ -1592,14 +1593,9 @@ button {
   color: var(--text);
 }
 @media (max-width: 640px) {
-  .logout-button {
-    width: 44px;
-    min-width: 44px;
-    padding: 0;
-  }
-  .logout-button span {
-    display: none;
-  }
+  .logout-button { min-width: 76px; padding-inline: 8px; font-size: 12px; }
+  .logout-button svg { width: 15px; height: 15px; }
+  .logout-button span { display: inline; }
 }
 
 [class~='bg-[#15241D]'] {

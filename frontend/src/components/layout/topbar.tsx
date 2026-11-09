@@ -1,4 +1,4 @@
-import { LockKeyhole, Menu } from 'lucide-react';
+import { LogOut, Menu } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import type { Role, Session } from '@/types/session';
@@ -50,9 +50,9 @@ export function Topbar({ role, session, onOpenMenu, onLogout }: TopbarProps) {
       </div>
       <div className="topbar-actions">
         <span className="live-session-label"><span aria-hidden="true" /> Live session</span>
-        <Button aria-label="Lock workspace" className="logout-button" onClick={onLogout} title="Lock workspace" variant="ghost">
-          <LockKeyhole data-icon="inline-start" />
-          <span>Lock workspace</span>
+        <Button aria-label="Sign out" className="logout-button" onClick={onLogout} title="Sign out" variant="ghost">
+          <LogOut data-icon="inline-start" />
+          <span>Sign out</span>
         </Button>
         <div className="account-identity" aria-label={`${personName}, ${roleNames[role]}`}>
           <span aria-hidden="true" className="account-avatar">{initials}</span>

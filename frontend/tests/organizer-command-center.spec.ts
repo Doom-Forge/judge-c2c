@@ -190,9 +190,15 @@ test("live organizer can sync GitHub repositories, provision a judge, publish a 
 	await page.goto("/");
 	await expect(page.getByRole("heading", { name: "Organizer command center" })).toBeVisible();
 	await page.goto("/repositories");
+	await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+	await expect(page.getByRole("list", { name: "Authorized GitHub repositories" })).toBeVisible();
+	await expect(page.getByText("Default branch", { exact: true })).toBeVisible();
 	await page.getByRole("button", { name: "Sync repositories" }).click();
 	await expect(page.getByText("Synced 1 accessible repositories.")).toBeVisible();
 	await page.goto("/assignments");
+	await expect(page.getByText(/Assigned judges enter marks in Review workspace/)).toBeVisible();
+	await expect(page.getByText(/No active judges yet/)).toBeVisible();
+	await expect(page.getByRole("button", { name: "Assign team" })).toBeDisabled();
 	await page.getByLabel("Judge name").fill("Judge One");
 	await page.getByRole("button", { name: "Create judge" }).click();
 	await expect(page.getByText("one-time-secret")).toBeVisible();
@@ -253,4 +259,35 @@ test("super admin inspects participant and judge dashboards without impersonatio
 	await expect(page.getByRole("heading", { name: "Official team score" })).toHaveCount(0);
 	await expect.poll(() => finalScoreRequests).toBe(0);
 	expect(writes).toEqual([]);
+});
+
+test("organizer Results uses the canonical no-trailing-slash API route", async ({ page }) => {
+	const requestedPaths: string[] = [];
+	const resultPayload = { teams: 0, completed: 0, pending: 0, results: [], ranking: [], frozen: false, freeze: null, publication: null };
+	await page.route("**/api/organization/**", async route => {
+		const path = new URL(route.request().url()).pathname;
+		requestedPaths.push(path);
+		if (path === "/api/organization/status") return route.fulfill({ json: { authenticated: true, role: "organizer", identity: { id: null, name: "Super admin", role: "organizer", teamId: null } } });
+		if (path === "/api/organization/round-two/results") return route.fulfill({ json: resultPayload });
+		if (path === "/api/organization/round-two/results/snapshots") return route.fulfill({ json: { snapshots: [] } });
+		return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
+	});
+	await page.goto("/results");
+	await expect(page.getByRole("heading", { name: "Results & leaderboard" })).toBeVisible();
+	await expect(page.getByRole("alert")).toHaveCount(0);
+	expect(requestedPaths).toContain("/api/organization/round-two/results");
+	expect(requestedPaths).toContain("/api/organization/round-two/results/snapshots");
+	expect(requestedPaths.some(path => path === "/api/organization/round-two/results/")).toBe(false);
+});
+
+test("organizer Results shows a safe retry message when the API is unavailable", async ({ page }) => {
+	await page.route("**/api/organization/**", async route => {
+		const path = new URL(route.request().url()).pathname;
+		if (path === "/api/organization/status") return route.fulfill({ json: { authenticated: true, role: "organizer", identity: { id: null, name: "Super admin", role: "organizer", teamId: null } } });
+		return route.fulfill({ status: 503, json: { error: "UPSTREAM_UNAVAILABLE" } });
+	});
+	await page.goto("/results");
+	const alert = page.getByRole("alert");
+	await expect(alert).toContainText("Results are temporarily unavailable. Please try again.");
+	await expect(alert).not.toContainText("/api/organization/");
 });

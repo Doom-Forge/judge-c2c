@@ -68,8 +68,11 @@ export type ResultsPayload = {
 };
 type ConfirmationAction = ResultTransition | null;
 
+const RESULTS_ENDPOINT = "/api/organization/round-two/results";
+const resultsUrl = (path = "") =>
+	path ? `${RESULTS_ENDPOINT}/${path.replace(/^\/+/, "")}` : RESULTS_ENDPOINT;
+
 const organizerApi = ky.create({
-	prefixUrl: "/api/organization/round-two/results",
 	credentials: "same-origin",
 	retry: 0,
 	timeout: 10_000,
@@ -77,11 +80,10 @@ const organizerApi = ky.create({
 });
 
 function errorMessage(error: unknown): string {
-	return error instanceof ApiError
-		? `${error.code ?? "Request failed"} (${error.status})`
-		: error instanceof Error
-		? error.message
-		: "The results service returned an unknown error.";
+	if (error instanceof ApiError && error.status === 403) {
+		return "Your organizer session cannot view results. Sign in again or contact an administrator.";
+	}
+	return "Results are temporarily unavailable. Please try again.";
 }
 
 function useOrganizerResults() {
@@ -94,8 +96,8 @@ function useOrganizerResults() {
 		setError(null);
 		try {
 			const [results, snapshotList] = await Promise.all([
-				organizerApi.get("").json<ResultsPayload>(),
-				organizerApi.get("snapshots").json<{ snapshots: Snapshot[] }>(),
+				organizerApi.get(resultsUrl()).json<ResultsPayload>(),
+				organizerApi.get(resultsUrl("snapshots")).json<{ snapshots: Snapshot[] }>(),
 			]);
 			setData(results);
 			setSnapshots(snapshotList.snapshots);
@@ -154,12 +156,12 @@ export function OrganizerResults() {
 		setActionError(null);
 		try {
 			if (action === "freeze" || action === "unfreeze") {
-				await organizerApi("freeze", {
+				await organizerApi(resultsUrl("freeze"), {
 					method: action === "freeze" ? "POST" : "DELETE",
 					json: { reason: reason.trim() },
 				});
 			} else {
-				await organizerApi.post("publication", {
+				await organizerApi.post(resultsUrl("publication"), {
 					json: {
 						snapshotId: action === "publish" ? selectedSnapshot : null,
 						reason: reason.trim(),
@@ -180,7 +182,7 @@ export function OrganizerResults() {
 		setBusy(true);
 		setActionError(null);
 		try {
-			const created = await organizerApi.post("snapshots", {
+			const created = await organizerApi.post(resultsUrl("snapshots"), {
 				json: { reason: "Organizer created a results snapshot" },
 			}).json<Snapshot>();
 			setSnapshots((current) => [created, ...current]);
@@ -195,7 +197,7 @@ export function OrganizerResults() {
 		if (!selectedSnapshot) return;
 		try {
 			const response = await organizerApi.get(
-				`snapshots/${selectedSnapshot}/export`,
+				resultsUrl(`snapshots/${selectedSnapshot}/export`),
 			);
 			const href = URL.createObjectURL(await response.blob());
 			const anchor = document.createElement("a");
