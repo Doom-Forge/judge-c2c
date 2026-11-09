@@ -1562,10 +1562,11 @@ function PageHeading({ section }: { readonly section: string }) {
 	return (
 		<header className={`occ-heading ${section === "overview" ? "occ-heading-overview" : ""}`}>
 			<div>
-				<div className="occ-heading-eyebrow"><span aria-hidden="true" />{copy.eyebrow}</div>
+				<div className="occ-heading-eyebrow"><span aria-hidden="true" />{section === "overview" ? "DOOMSDAY CONSOLE / ORGANIZER WORKSPACE" : copy.eyebrow}</div>
 				<h1>{copy.title}</h1>
 				<p>{copy.description}</p>
 			</div>
+			{section === "overview" && <div className="occ-crest" aria-hidden="true"><span /></div>}
 			{section === "overview" && <nav className="occ-quick-actions" aria-label="Organizer shortcuts">
 				<Link to="/teams"><span>01</span> Teams <ArrowUpRight aria-hidden="true" /></Link>
 				<Link to="/assignments"><span>02</span> Assign judges <ArrowUpRight aria-hidden="true" /></Link>

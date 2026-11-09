@@ -784,3 +784,42 @@
     width: 100%;
   }
 }
+.app-shell .judge-workspace {
+  --jw-ink: #f1f3eb;
+  --jw-muted: #b3beb2;
+  --jw-line: #303a31;
+  --jw-green: #c2f27d;
+  --jw-green-soft: #202b19;
+}
+.app-shell .jw-team-card,
+.app-shell .jw-panel { border-color: #303a31; background: #111512; box-shadow: 0 12px 30px #0003; }
+.app-shell .jw-team-title h2,
+.app-shell .jw-state h2,
+.app-shell .jw-panel h2,
+.app-shell .jw-panel h3 { color: #f1f3eb; }
+.app-shell .jw-status,
+.app-shell .jw-count { background: #202b19; color: #d0fb96; }
+.app-shell .jw-button-primary { border-color: #b8f36a; background: #b8f36a; color: #11150c; }
+.app-shell .jw-button-primary:hover:not(:disabled) { background: #ceff82; }
+.app-shell .jw-button-quiet,
+.app-shell .jw-button-secondary { border-color: #3a463a; background: #171d18; color: #e8eee4; }
+.app-shell .jw-button-quiet:hover:not(:disabled),
+.app-shell .jw-button-secondary:hover:not(:disabled) { background: #20291c; }
+.app-shell .jw-state { border-color: #394339; background: #111512; color: #b3beb2; }
+.app-shell .jw-team-meta { border-color: #303a31; }
+.app-shell .jw-team-meta span,
+.app-shell .jw-current-document > span { color: #aeb9ad; }
+.app-shell .jw-team-meta strong { color: #e8eee4; }
+.app-shell .jw-stage-tabs { border-color: #303a31; background: #0c100d; }
+.app-shell .jw-stage-tabs button { color: #b7c1b5; }
+.app-shell .jw-stage-tabs button[aria-selected='true'] { border-color: #a4df5b; background: #20291c; color: #e8f4d9; }
+.app-shell .jw-alert-error,
+.app-shell .jw-warning { border-color: #77443d; background: #281513; color: #ffb7ad; }
+.app-shell .jw-alert-notice { border-color: #4d6139; background: #192316; color: #d1fa95; }
+.app-shell .jw-demo-badge { border-color: #526241; background: #1d2618; color: #d0f797; }
+.app-shell .jw-panel input,
+.app-shell .jw-panel textarea,
+.app-shell .jw-panel select { border-color: #3a463a; background: #0c100d; color: #f1f3eb; }
+.app-shell .jw-panel input:disabled,
+.app-shell .jw-panel textarea:disabled,
+.app-shell .jw-panel select:disabled { opacity: .9; color: #d0d8ce; }

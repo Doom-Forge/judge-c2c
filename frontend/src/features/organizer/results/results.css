@@ -275,3 +275,16 @@
     max-width: 70%;
   }
 }
+.app-shell .results-demo-notice { border-color: #665535; background: #211d13; color: #f0d59b; }
+.app-shell .results-card { border: 1px solid #303a31; background: #111512; box-shadow: 0 12px 30px #0003; }
+.app-shell .results-card-header { border-color: #303a31; }
+.app-shell .results-table thead { background: #191f1a; }
+.app-shell .results-table th { color: #b8c2b7; }
+.app-shell .results-table td { border-color: #293129; color: #cad2c8; }
+.app-shell .results-table tbody tr:hover { background: #171e17; }
+.app-shell .results-table tbody tr:last-child td { border-color: #293129; }
+.app-shell .results-track-filter select,
+.app-shell .results-snapshot-select select { border-color: #39443a; background: #0c100d; color: #f0f3e9; }
+.app-shell .results-dialog { border-color: #3b463a; background: #111512; color: #f1f3eb; }
+.app-shell .results-dialog input,
+.app-shell .results-dialog textarea { border-color: #39443a; background: #0c100d; color: #f0f3e9; }
