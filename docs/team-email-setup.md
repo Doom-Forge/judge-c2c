@@ -6,6 +6,12 @@ A committed Unstop import with a `team_lead_email` creates one shared 12-charact
 
 The unauthenticated same-origin endpoint `POST /api/organization/participant/verify` accepts an imported email and code. Successful verification creates an authenticated, team-scoped participant identity linked to the imported team member and GitHub ID. Inactive teams or members cannot authenticate, and each imported email can use the code once.
 
+After activation, participants can request a fresh email sign-in code. Each code
+is single-use, expires after ten minutes, and is stored as a hash. Email sign-in
+requires migration `0045_participant_email_login.sql` and the
+`TEAM_EMAIL_SENDER` binding. Participants can still use an already delivered
+team invitation code when the sender binding is unavailable.
+
 SpaceMail is not configured in this checkout, so invitation dispatch remains dormant. When configured later, use the provider-neutral `TEAM_EMAIL_SENDER` binding and deploy a separate sender Worker. That sender Worker alone must read SpaceMail SMTP host, username, password, and TLS settings from its Cloudflare secrets; never put SMTP credentials in Doomforge vars, D1, or source. The sender must durably accept and deduplicate the stable invitation idempotency key before returning success.
 
 ## Hourly team status email

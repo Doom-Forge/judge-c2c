@@ -16,6 +16,8 @@ const titles: Readonly<Record<string, string>> = {
   '/deadlines': 'Deadlines',
   '/communications': 'Communications',
   '/results': 'Results',
+  '/repositories': 'Repositories',
+  '/rubrics': 'Rubrics',
   '/queue': 'My queue',
   '/workspace': 'Review workspace',
   '/history': 'Review history',

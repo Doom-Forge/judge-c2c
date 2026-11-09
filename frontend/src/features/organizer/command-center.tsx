@@ -11,6 +11,7 @@ import {
 	Users,
 } from "lucide-react";
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -153,13 +154,14 @@ function toDeadlineValue(value: string): string | null {
 }
 
 function csvHeadersTemplate() {
-	return "team_name,participant_name,github_username,team_status,team_lead_email,email,external_id,repository,issue_number";
+	return "team_name,participant_name,email,team_lead_email,team_status,external_id,repository,issue_number";
 }
 
 export function OrganizerCommandCenter({
 	session,
 	focus,
 }: OrganizerCommandCenterProps) {
+	const section = focus ?? "overview";
 	const liveOrganizer = session.kind === "live" &&
 		session.status.role === "organizer";
 	const [liveTeams, setLiveTeams] = useState<TeamRecord[]>([]);
@@ -325,16 +327,6 @@ export function OrganizerCommandCenter({
 		};
 	}, [liveOrganizer]);
 
-	useEffect(() => {
-		if (!focus) return;
-		requestAnimationFrame(() => {
-			document.getElementById(`organizer-${focus}`)?.scrollIntoView({
-				behavior: "smooth",
-				block: "start",
-			});
-		});
-	}, [focus]);
-
 	const teams = liveTeams;
 	const liveTrackNames = useMemo(
 		() =>
@@ -456,8 +448,7 @@ export function OrganizerCommandCenter({
 			.join("\n");
 		const confirmation =
 			`Import ${csvPreview.teams.length} teams from this CSV?\n\n${summary}\n\n` +
-			"This sends participant GitHub usernames to the authenticated organizer API. " +
-			"The server resolves identities, checks repository and issue eligibility, and records an audit event. Teams with a lead email also receive a pending sign-in invitation; the scheduled mailer may deliver it when configured. Continue?";
+			"The authenticated organizer API validates the participant emails, checks repository and issue eligibility, and records an audit event. Participants will add their GitHub username after signing in. Continue?";
 		if (!window.confirm(confirmation)) return;
 
 		setImportError("");
@@ -597,7 +588,7 @@ export function OrganizerCommandCenter({
 	if (!liveOrganizer) {
 		return (
 			<main className="occ-page">
-				<PageHeading />
+				<PageHeading section="overview" />
 				<div className="occ-access-state" role="status">
 					<ShieldCheck aria-hidden="true" />
 					<div>
@@ -613,9 +604,9 @@ export function OrganizerCommandCenter({
 
 	return (
 		<main className="occ-page">
-			<PageHeading />
+			<PageHeading section={section} />
 
-			<section
+			{section === "overview" && <section
 				className="occ-metric-grid"
 				aria-label="Competition metrics"
 				id="organizer-overview"
@@ -653,22 +644,22 @@ export function OrganizerCommandCenter({
 						: "Active teams with an active judge assignment"}
 					icon={<CircleHelp aria-hidden="true" />}
 				/>
-			</section>
+			</section>}
 
-			{teamLoad === "loading" && (
+			{["overview", "teams"].includes(section) && teamLoad === "loading" && (
 				<StateMessage
 					kind="loading"
 					message="Loading organizer records…"
 				/>
 			)}
-			{teamLoad === "error" && (
+			{["overview", "teams"].includes(section) && teamLoad === "error" && (
 				<StateMessage
 					kind="error"
 					message={loadError || "Team records are unavailable."}
 				/>
 			)}
 
-			<section
+			{section === "overview" && <section
 				className="occ-dashboard-grid"
 				aria-label="Judging operations"
 				id="organizer-operations"
@@ -828,13 +819,13 @@ export function OrganizerCommandCenter({
 							)}
 					</CardContent>
 				</Card>
-			</section>
+			</section>}
 
-			<GitHubConnectionPanel />
-			<JudgeAdministrationPanel />
-			<RubricManagementPanel />
+			{section === "github" && <GitHubConnectionPanel />}
+			{section === "assignments" && <JudgeAdministrationPanel />}
+			{section === "rubrics" && <RubricManagementPanel />}
 
-			<Card className="occ-panel occ-team-panel" id="organizer-teams">
+			{section === "teams" && <Card className="occ-panel occ-team-panel" id="organizer-teams">
 				<CardHeader className="occ-team-header">
 					<div>
 						<CardTitle>Teams</CardTitle>
@@ -1057,19 +1048,18 @@ export function OrganizerCommandCenter({
 						</p>
 					)}
 				</CardContent>
-			</Card>
+			</Card>}
 
-			<section
-				className="occ-lower-grid"
+			{["teams", "deadlines", "communications"].includes(section) && <section
+				className={`occ-lower-grid ${["teams", "deadlines", "communications"].includes(section) ? "occ-lower-grid-single" : ""}`}
 				aria-label="Organizer configuration"
 			>
-				<Card className="occ-panel occ-import-panel">
+				{section === "teams" && <Card className="occ-panel occ-import-panel" id="organizer-import">
 					<CardHeader>
 						<div>
 							<CardTitle>Import teams</CardTitle>
 							<CardDescription>
-								Preview the Unstop roster CSV before any
-								organizer API write.
+								Preview the roster before importing participant names and email addresses.
 							</CardDescription>
 						</div>
 					</CardHeader>
@@ -1107,7 +1097,7 @@ export function OrganizerCommandCenter({
 								setImportState("idle");
 								setImportMessage("");
 							}}
-							placeholder="team_name,participant_name,github_username,…"
+							placeholder="team_name,participant_name,email,team_lead_email,…"
 							rows={5}
 							value={csv}
 						/>
@@ -1211,10 +1201,10 @@ export function OrganizerCommandCenter({
 								: "Live import uses the authenticated cookie session and is audited. A lead email creates a pending sign-in invitation that the scheduled mailer may deliver."}
 						</p>
 					</CardContent>
-				</Card>
+				</Card>}
 
-				<div className="occ-config-stack">
-					<Card className="occ-panel" id="organizer-deadlines">
+				{section !== "teams" && <div className="occ-config-stack">
+					{section === "deadlines" && <Card className="occ-panel" id="organizer-deadlines">
 						<CardHeader>
 							<div>
 								<CardTitle>Round 2 deadlines</CardTitle>
@@ -1319,10 +1309,10 @@ export function OrganizerCommandCenter({
 									</div>
 								)}
 						</CardContent>
-					</Card>
+					</Card>}
 
-					<OrganizerAnnouncementsPanel />
-					<Card className="occ-panel" id="organizer-communications">
+					{section === "communications" && <OrganizerAnnouncementsPanel />}
+					{section === "communications" && <Card className="occ-panel" id="organizer-communications">
 						<CardHeader>
 							<div>
 								<CardTitle>Email configuration</CardTitle>
@@ -1545,23 +1535,38 @@ export function OrganizerCommandCenter({
 									</>
 								)}
 						</CardContent>
-					</Card>
-				</div>
-			</section>
+					</Card>}
+				</div>}
+			</section>}
 		</main>
 	);
 }
 
-function PageHeading() {
+
+const sectionCopy: Record<string, { title: string; description: string; eyebrow: string }> = {
+	overview: { title: "Organizer command center", description: "Your live competition operations, review readiness, and team activity.", eyebrow: "DOOMFORGE / ORGANIZER WORKSPACE" },
+	teams: { title: "Team roster", description: "Review registered teams or validate and import the participant roster.", eyebrow: "ORGANIZATION / TEAMS" },
+	assignments: { title: "Judges & assignments", description: "Create judge access, assign active teams, and manage review coverage.", eyebrow: "ORGANIZATION / REVIEW OPERATIONS" },
+	github: { title: "Repository connections", description: "Check the GitHub App installation and synchronize accessible repositories.", eyebrow: "INTEGRATIONS / GITHUB" },
+	rubrics: { title: "Evaluation rubrics", description: "Build and publish weighted criteria for each connected repository.", eyebrow: "REVIEW OPERATIONS / RUBRICS" },
+	deadlines: { title: "Competition deadlines", description: "Set the analysis document and engineering review cutoffs.", eyebrow: "COMPETITION / SCHEDULE" },
+	communications: { title: "Participant communications", description: "Publish announcements and manage scheduled team email.", eyebrow: "COMPETITION / COMMUNICATIONS" },
+};
+
+function PageHeading({ section }: { readonly section: string }) {
+	const copy = sectionCopy[section] ?? sectionCopy["overview"]!;
 	return (
-		<header className="occ-heading">
+		<header className={`occ-heading ${section === "overview" ? "occ-heading-overview" : ""}`}>
 			<div>
-				<h1>Organizer Command Center</h1>
-				<p>
-					Keep team intake, review readiness, and organizer settings
-					in one place.
-				</p>
+				<div className="occ-heading-eyebrow"><span aria-hidden="true" />{copy.eyebrow}</div>
+				<h1>{copy.title}</h1>
+				<p>{copy.description}</p>
 			</div>
+			{section === "overview" && <nav className="occ-quick-actions" aria-label="Organizer shortcuts">
+				<Link to="/teams"><span>01</span> Teams <ArrowUpRight aria-hidden="true" /></Link>
+				<Link to="/assignments"><span>02</span> Assign judges <ArrowUpRight aria-hidden="true" /></Link>
+				<Link to="/deadlines"><span>03</span> Set deadlines <ArrowUpRight aria-hidden="true" /></Link>
+			</nav>}
 		</header>
 	);
 }

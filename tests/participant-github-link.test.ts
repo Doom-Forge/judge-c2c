@@ -134,11 +134,28 @@ describe("email-only participant onboarding and GitHub linking", () => {
 			},
 		} as unknown as Fetcher;
 		const arenaCookie = "doomforge_session=verified-arena-session";
+		const mismatch = await worker.fetch(
+			request(
+				"/api/organization/participant/github/link",
+				"POST",
+				{ login: "different-user" },
+				`${alice.cookie}; ${arenaCookie}`,
+			),
+			env,
+			ctx,
+		);
+		expect([mismatch.status, await mismatch.json()]).toEqual([
+			409,
+			{ error: "GITHUB_USERNAME_MISMATCH" },
+		]);
+		expect(await env.ORG_DB!.prepare(
+			"SELECT m.github_id FROM team_roster_members r LEFT JOIN team_members m ON m.id=r.linked_team_member_id WHERE r.email='alice@example.test'",
+		).first()).toEqual({ github_id: null });
 		const linked = await worker.fetch(
 			request(
 				"/api/organization/participant/github/link",
 				"POST",
-				{ id: 99, login: "browser-forgery" },
+				{ login: "alice-gh" },
 				`${alice.cookie}; ${arenaCookie}`,
 			),
 			env,
@@ -157,7 +174,7 @@ describe("email-only participant onboarding and GitHub linking", () => {
 			request(
 				"/api/organization/participant/github/link",
 				"POST",
-				{},
+				{ login: "alice-gh" },
 				`${bob.cookie}; ${arenaCookie}`,
 			),
 			env,

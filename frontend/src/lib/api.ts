@@ -94,6 +94,19 @@ export async function verifyParticipant(email: string, code: string): Promise<vo
   }
 }
 
+export async function requestParticipantCode(email: string): Promise<void> {
+  try {
+    await api.post('participant/request-code', { json: { email } }).json();
+  } catch (error) {
+    if (error instanceof HTTPError) {
+      const payload: unknown = await error.response.json().catch(() => null);
+      const parsed = ErrorPayloadSchema.safeParse(payload);
+      throw new ApiError(error.response.status, parsed.success ? parsed.data.error : null);
+    }
+    throw error;
+  }
+}
+
 export async function loginLinkedParticipantWithGitHub(): Promise<void> {
   try {
     await api.post('participant/github-login').json();

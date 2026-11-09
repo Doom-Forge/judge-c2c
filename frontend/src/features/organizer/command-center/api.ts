@@ -40,7 +40,16 @@ export type JudgeAssignment = {
 };
 export type RepositoryRecord = { id: number; full_name: string; private: boolean; default_branch: string; accessible: boolean };
 export type ConsoleIdentity = { id: string; name: string; role: "organizer" | "judge" | "participant"; team_id: string | null; created_at: string; revoked_at: string | null };
-export type RubricCriterion = { id: string; label: string; weight: number; description?: string };
+export const rubricCategories = [
+	"Functional correctness",
+	"Security",
+	"Performance and scalability",
+	"Code quality",
+	"Innovation and usefulness",
+	"Reproducibility",
+] as const;
+export type RubricCategory = (typeof rubricCategories)[number];
+export type RubricCriterion = { id: string; label: string; weight: number; description?: string; category?: RubricCategory };
 
 async function request<T>(
 	path: string,

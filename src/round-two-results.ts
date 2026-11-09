@@ -106,7 +106,7 @@ async function aggregateResults(db: D1Database) {
 			),
 		db
 			.prepare(
-				"SELECT s.team_id,s.judge_identity_id,s.stage,s.revision,s.score,s.payload,s.rubric_version_id,rv.repository_id AS rubric_repository_id FROM round_two_review_submissions s LEFT JOIN round_two_repository_rubric_versions rv ON rv.id=s.rubric_version_id WHERE s.revision=(SELECT MAX(latest.revision) FROM round_two_review_submissions latest WHERE latest.team_id=s.team_id AND latest.judge_identity_id=s.judge_identity_id AND latest.stage=s.stage) AND EXISTS(SELECT 1 FROM teams t WHERE t.id=s.team_id AND t.hackathon_id='initial' AND t.status='ACTIVE') ORDER BY s.team_id,s.stage,s.judge_identity_id",
+				"SELECT s.id,s.team_id,s.judge_identity_id,s.stage,s.revision,s.score,s.payload,s.rubric_version_id,rv.repository_id AS rubric_repository_id FROM round_two_review_submissions s LEFT JOIN round_two_repository_rubric_versions rv ON rv.id=s.rubric_version_id WHERE s.revision=(SELECT MAX(latest.revision) FROM round_two_review_submissions latest WHERE latest.team_id=s.team_id AND latest.judge_identity_id=s.judge_identity_id AND latest.stage=s.stage) AND EXISTS(SELECT 1 FROM teams t WHERE t.id=s.team_id AND t.hackathon_id='initial' AND t.status='ACTIVE') ORDER BY s.team_id,s.stage,s.judge_identity_id",
 			),
 		db
 			.prepare(
@@ -125,6 +125,12 @@ async function aggregateResults(db: D1Database) {
 			repositoryId: number;
 			fullName: string;
 		}[]>();
+	const reviewSources: Array<{
+		teamId: string;
+		stage: string;
+		judgeIdentityId: string;
+		reviewId: string;
+	}> = [];
 	for (
 		const team of teams.results as {
 			id: string;
@@ -151,6 +157,7 @@ async function aggregateResults(db: D1Database) {
 	}
 	for (
 		const review of reviews.results as {
+			id: string;
 			team_id: string;
 			judge_identity_id: string;
 			stage: string;
@@ -167,6 +174,12 @@ async function aggregateResults(db: D1Database) {
 			teamFeedback = feedback.get(review.team_id);
 		if (review.stage === "ANALYSIS") {
 			current.analysis.push(review.score);
+			reviewSources.push({
+				teamId: review.team_id,
+				stage: review.stage,
+				judgeIdentityId: review.judge_identity_id,
+				reviewId: review.id,
+			});
 			if (safeFeedback && teamFeedback) teamFeedback.analysis.push(safeFeedback);
 		}
 		else if (review.stage === "ENGINEERING") {
@@ -176,6 +189,12 @@ async function aggregateResults(db: D1Database) {
 				continue;
 			}
 			current.engineering.push(review.score);
+			reviewSources.push({
+				teamId: review.team_id,
+				stage: review.stage,
+				judgeIdentityId: review.judge_identity_id,
+				reviewId: review.id,
+			});
 			if (safeFeedback && teamFeedback) teamFeedback.engineering.push(safeFeedback);
 		}
 	}
@@ -224,6 +243,7 @@ async function aggregateResults(db: D1Database) {
 		completed: results.filter((result) => result.status === "READY").length,
 		pending: results.filter((result) => result.status === "PENDING").length,
 		results,
+		reviewSources,
 	};
 }
 

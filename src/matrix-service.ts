@@ -12,6 +12,7 @@ import { organizationEnv } from "./organization";
 import { GitHub } from "./github";
 import type { Contract } from "./domain";
 import type { Env } from "./env";
+import { ensureDefaultReviewer } from "./default-reviewer";
 
 export type MatrixRun = {
 	id: string;
@@ -53,6 +54,59 @@ const eventSchema = z.object({
 const json = (value: unknown, status = 200) =>
 	Response.json(value, { status, headers: { "cache-control": "no-store" } });
 const dbFor = (env: Env) => env.ORG_DB ?? env.DB;
+type ReviewerRepository = {
+	repository_id: number;
+	full_name: string;
+	installation_id: number;
+};
+type DefaultReviewerClientFactory = (
+	repository: ReviewerRepository,
+) => Promise<Pick<GitHub, "api">>;
+type MatrixPRDependencies = {
+	clientFactory?: DefaultReviewerClientFactory;
+	deferReviewer?: (task: Promise<void>) => void;
+};
+async function defaultReviewerClient(
+	env: Env,
+	repository: ReviewerRepository,
+) {
+	return GitHub.installation(
+		await organizationEnv(env),
+		{
+			repository: {
+				id: repository.repository_id,
+				fullName: repository.full_name,
+				installationId: repository.installation_id,
+			},
+		} as Contract,
+		{ issuesWrite: false, pullRequestsWrite: true, checksWrite: false },
+	);
+}
+async function requestDefaultReviewerForUnconfiguredPR(
+	env: Env,
+	db: D1Database,
+	repository: ReviewerRepository,
+	prNumber: number,
+	clientFactory: DefaultReviewerClientFactory = (repo) =>
+		defaultReviewerClient(env, repo),
+) {
+	if (!env.DEFAULT_PR_REVIEWER) return;
+	try {
+		const github = await clientFactory(repository);
+		await ensureDefaultReviewer(
+			db,
+			github,
+			{
+				repository_id: repository.repository_id,
+				full_name: repository.full_name,
+				pr_number: prNumber,
+			},
+			env.DEFAULT_PR_REVIEWER,
+		);
+	} catch {
+		// The specification-required response remains authoritative if review assignment is unavailable.
+	}
+}
 export async function dispatchMatrix(env: Env, id: string) {
 	if (!env.MATRIX_EVALUATOR) {
 		throw new Error("MATRIX_WORKFLOW_NOT_CONFIGURED");
@@ -79,6 +133,7 @@ export async function acceptMatrixPR(
 		updated_at: string;
 		user: { id: number; login: string };
 	}>,
+	dependencies: MatrixPRDependencies = {},
 ) {
 	const parsed = eventSchema.safeParse(raw);
 	if (!parsed.success) return json({ error: "INVALID_PAYLOAD" }, 400);
@@ -104,6 +159,32 @@ export async function acceptMatrixPR(
 				],
 		)
 	) {
+		const selected = await db
+			.prepare(
+				"SELECT g.id AS repository_id,g.full_name,c.installation_id FROM github_repositories g JOIN github_connection c ON c.id=1 WHERE g.id=? AND g.full_name=? AND g.accessible=1 AND c.installation_id=?",
+			)
+			.bind(p.repository.id, p.repository.full_name, p.installation.id)
+			.first<ReviewerRepository>();
+		if (!selected || pr.base.repo.id !== selected.repository_id) {
+			return json({ error: "REPOSITORY_NOT_SELECTED" }, 403);
+		}
+		if (pr.state !== (p.action === "closed" ? "closed" : "open")) {
+			return json({ error: "INCONSISTENT_EVENT" }, 400);
+		}
+		if (pr.state === "open") {
+			const reviewerTask = requestDefaultReviewerForUnconfiguredPR(
+				env,
+				db,
+				selected,
+				pr.number,
+				dependencies.clientFactory,
+			);
+			if (dependencies.deferReviewer) {
+				dependencies.deferReviewer(reviewerTask);
+			} else {
+				await reviewerTask;
+			}
+		}
 		return json({ error: "CHALLENGE_SPECIFICATION_REQUIRED" }, 403);
 	}
 	const repo = await db

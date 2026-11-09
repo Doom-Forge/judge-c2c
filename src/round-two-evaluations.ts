@@ -7,6 +7,7 @@ import {
 } from "./round-two-scoring";
 import type { ConsoleSession } from "./console-identities";
 import type { Env } from "./env";
+import { publishedReviewId } from "./round-two-score-sharing";
 
 const json = (value: unknown, status = 200) =>
 	Response.json(value, {
@@ -42,6 +43,12 @@ const reviewInput = z
 		reason: z.string().trim().min(10).max(1000).optional(),
 	})
 	.strict();
+const scoreShareInput = z.object({
+	teamId: z.string().min(1).max(80),
+	stage: stageSchema,
+	reviewId: z.string().min(1).max(100),
+	shared: z.boolean(),
+}).strict();
 
 async function input(request: Request) {
 	return JSON.parse(
@@ -338,6 +345,84 @@ async function engineeringReview(
 	return json({ id, revision, score, status: "FINAL" }, 201);
 }
 
+async function setReviewScoreSharing(
+	request: Request,
+	db: D1Database,
+	session: ConsoleSession,
+) {
+	if (session.role !== "judge" || !session.identity_id) {
+		return json({ error: "JUDGE_REQUIRED" }, 403);
+	}
+	let data: z.infer<typeof scoreShareInput>;
+	try {
+		data = scoreShareInput.parse(await input(request));
+	} catch (error) {
+		return error instanceof Error && error.message === "BODY_LIMIT"
+			? json({ error: "BODY_LIMIT" }, 413)
+			: json({ error: "INVALID_INPUT" }, 400);
+	}
+	const owned = await db
+		.prepare(
+			"SELECT id FROM round_two_review_submissions WHERE id=? AND team_id=? AND judge_identity_id=? AND stage=?",
+		)
+		.bind(data.reviewId, data.teamId, session.identity_id, data.stage)
+		.first();
+	if (!owned) return json({ error: "NOT_FOUND" }, 404);
+
+	if (data.shared) {
+		if (!(await assigned(db, session.identity_id, data.teamId))) {
+			return json({ error: "NOT_FOUND" }, 404);
+		}
+		const alreadyShared = await db
+			.prepare(
+				"SELECT submission_id FROM round_two_review_score_shares WHERE submission_id=? AND judge_identity_id=? AND revoked_at IS NULL",
+			)
+			.bind(data.reviewId, session.identity_id)
+			.first();
+		if (alreadyShared) {
+			return json({ reviewId: data.reviewId, shared: true, unchanged: true });
+		}
+	}
+
+	const actor = "judge:" + session.identity_id,
+		eventId = crypto.randomUUID();
+	if (data.shared) {
+		const changes = await db.batch([
+			db
+				.prepare(
+					"INSERT INTO round_two_review_score_shares(submission_id,team_id,judge_identity_id,shared_at,revoked_at,updated_at) SELECT s.id,s.team_id,s.judge_identity_id,CURRENT_TIMESTAMP,NULL,CURRENT_TIMESTAMP FROM round_two_review_submissions s WHERE s.id=? AND s.team_id=? AND s.judge_identity_id=? AND s.stage=? AND (s.revision=(SELECT MAX(latest.revision) FROM round_two_review_submissions latest WHERE latest.team_id=s.team_id AND latest.judge_identity_id=s.judge_identity_id AND latest.stage=s.stage) OR EXISTS(SELECT 1 FROM round_two_result_publication p JOIN round_two_result_snapshots snapshot ON snapshot.id=p.snapshot_id JOIN json_each(snapshot.snapshot,'$.reviewSources') source WHERE p.id=1 AND p.published_at IS NOT NULL AND json_extract(source.value,'$.teamId')=s.team_id AND json_extract(source.value,'$.stage')=s.stage AND json_extract(source.value,'$.judgeIdentityId')=s.judge_identity_id AND json_extract(source.value,'$.reviewId')=s.id)) AND EXISTS(SELECT 1 FROM round_two_judge_assignments a JOIN teams t ON t.id=a.team_id WHERE a.judge_identity_id=s.judge_identity_id AND a.team_id=s.team_id AND a.revoked_at IS NULL AND t.status='ACTIVE' AND t.hackathon_id='initial') ON CONFLICT(submission_id) DO UPDATE SET shared_at=CURRENT_TIMESTAMP,revoked_at=NULL,updated_at=CURRENT_TIMESTAMP WHERE round_two_review_score_shares.judge_identity_id=excluded.judge_identity_id AND round_two_review_score_shares.team_id=excluded.team_id RETURNING submission_id",
+				)
+				.bind(data.reviewId, data.teamId, session.identity_id, data.stage),
+			db
+				.prepare(
+					"INSERT INTO audit(action,entity,actor,changes) SELECT 'round_two.review_score.shared',?,?,? WHERE changes()=1",
+				)
+				.bind(data.reviewId, actor, JSON.stringify({ teamId: data.teamId, stage: data.stage, shared: true, eventId })),
+		]);
+		return changes[0]?.meta.changes
+			? json({ reviewId: data.reviewId, shared: true })
+			: json({ error: "REVIEW_NOT_SHAREABLE" }, 409);
+	}
+
+	const changes = await db.batch([
+		db
+			.prepare(
+				"UPDATE round_two_review_score_shares SET revoked_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE submission_id=? AND team_id=? AND judge_identity_id=? AND revoked_at IS NULL",
+			)
+			.bind(data.reviewId, data.teamId, session.identity_id),
+		db
+			.prepare(
+				"INSERT INTO audit(action,entity,actor,changes) SELECT 'round_two.review_score.revoked',?,?,? WHERE changes()=1",
+			)
+			.bind(data.reviewId, actor, JSON.stringify({ teamId: data.teamId, stage: data.stage, shared: false, eventId })),
+	]);
+	return json({
+		reviewId: data.reviewId,
+		shared: false,
+		unchanged: !changes[0]?.meta.changes,
+	});
+}
+
 export async function roundTwoEvaluations(
 	request: Request,
 	env: Env,
@@ -353,6 +438,9 @@ export async function roundTwoEvaluations(
 			"/api/organization/round-two/reviews",
 			"",
 		);
+	if (path === "/share" && request.method === "POST") {
+		return setReviewScoreSharing(request, db, session);
+	}
 	if (path === "" && request.method === "GET") {
 		const teamId = url.searchParams.get("teamId"),
 			stageResult = stageSchema.safeParse(url.searchParams.get("stage"));
@@ -380,7 +468,7 @@ export async function roundTwoEvaluations(
 		const judgeId = session.role === "judge"
 				? session.identity_id
 				: url.searchParams.get("judgeIdentityId"),
-			[drafts, submissions, currentDocument] = await Promise.all([
+			[drafts, submissions, currentDocument, scoreShares] = await Promise.all([
 				db
 					.prepare(
 						"SELECT team_id,judge_identity_id,stage,score,payload,document_id,rubric_version_id,updated_at FROM round_two_review_drafts WHERE team_id=? AND stage=? AND (? IS NULL OR judge_identity_id=?) ORDER BY updated_at DESC LIMIT 100",
@@ -427,6 +515,11 @@ export async function roundTwoEvaluations(
 							created_at: string;
 						}>()
 					: Promise.resolve(null),
+				session.role === "judge" && session.identity_id
+					? db.prepare(
+						"SELECT submission_id FROM round_two_review_score_shares WHERE team_id=? AND judge_identity_id=? AND revoked_at IS NULL",
+					).bind(teamId, session.identity_id).all<{ submission_id: string }>()
+					: Promise.resolve({ results: [] as { submission_id: string }[] }),
 			]);
 		const activeRubricResult = stage === "ENGINEERING"
 				? await repositoryRubric(db, teamId)
@@ -446,6 +539,10 @@ export async function roundTwoEvaluations(
 				);
 			}
 		}
+		const sharedReviewIds = new Set(scoreShares.results.map((share) => share.submission_id));
+		const publishedOwnReviewId = session.role === "judge" && session.identity_id
+			? await publishedReviewId(db, teamId, stage, session.identity_id)
+			: null;
 		return json({
 			currentDocument: currentDocument ?? null,
 			rubric: currentRubric,
@@ -459,7 +556,15 @@ export async function roundTwoEvaluations(
 			draft: judgeId
 				? (drafts.results[0] ? decode(drafts.results[0]) : null)
 				: null,
-			submissions: submissions.results.map(decode),
+			submissions: submissions.results.map((submission) => ({
+				...decode(submission),
+				...(session.role === "judge" && submission.judge_identity_id === session.identity_id
+					? {
+						scoreShared: sharedReviewIds.has(submission.id),
+						includedInPublishedSnapshot: submission.id === publishedOwnReviewId,
+					}
+					: {}),
+			})),
 		});
 	}
 	if (path !== "" || request.method !== "POST") {

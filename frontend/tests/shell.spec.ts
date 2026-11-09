@@ -9,6 +9,7 @@ test("signed-out users get a real access-code sign-in and no demo entry point", 
 	);
 	await page.goto("/");
 	await expect(page.getByRole("heading", { name: "Sign in to Doomforge" })).toBeVisible();
+	await expect(page.locator(".session-login-card")).toHaveCSS("display", "grid");
 	await expect(page.getByLabel("Organization access code")).toBeVisible();
 	await expect(page.getByText(/demo data|sample records|enter demo/i)).toHaveCount(0);
 });

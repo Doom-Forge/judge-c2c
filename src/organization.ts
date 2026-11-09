@@ -44,7 +44,7 @@ import {
 import type { CompetitionServices } from './competition-store';
 import type { Env } from './env';
 import { paymentRetryDescriptions, paymentRetryPolicy } from './runner-policy';
-import { verifyParticipant } from './team-invitations';
+import { requestParticipantLoginCode, verifyParticipant } from './team-invitations';
 import { roundTwoAnnouncements } from './round-two-announcements';
 import { githubParticipantLogin } from './participant-github';
 
@@ -590,6 +590,31 @@ export async function organization(
     return json({ error: 'ORIGIN_NOT_ALLOWED' }, 403);
   }
   if (
+    url.pathname === '/api/organization/participant/request-code' &&
+    request.method === 'POST'
+  ) {
+    if (request.headers.get('origin') !== origin) {
+      return json({ error: 'SAME_ORIGIN_REQUIRED' }, 403);
+    }
+    let body: unknown;
+    try {
+      body = await input(request, 1000);
+    } catch {
+      return json({ error: 'INVALID_INPUT' }, 400);
+    }
+    const parsed = z.object({ email: z.email().max(200) }).strict().safeParse(body);
+    if (!parsed.success) return json({ error: 'INVALID_INPUT' }, 400);
+    const result = await requestParticipantLoginCode(
+      env,
+      parsed.data.email,
+      Date.now(),
+      request.headers.get('cf-connecting-ip') ?? 'local',
+    );
+    if (result.status === 503) return json({ error: 'PARTICIPANT_EMAIL_UNAVAILABLE' }, 503);
+    if (result.status === 429) return json({ error: 'VERIFICATION_RATE_LIMIT' }, 429);
+    return json({ sent: true }, 202);
+  }
+  if (
     url.pathname === '/api/organization/participant/verify' &&
     request.method === 'POST'
   ) {
@@ -701,6 +726,8 @@ export async function organization(
         env,
         delivery,
         await digest(new TextDecoder().decode(body)),
+        undefined,
+        { deferReviewer: (task) => ctx.waitUntil(task) },
       );
     }
     if (event === 'installation' || event === 'installation_repositories') {

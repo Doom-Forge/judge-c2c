@@ -29,6 +29,7 @@ test("authenticated participant sees live options, deadlines, and released resul
 							finalScore: 82,
 							rank: 1,
 						}],
+						sharedStageScores: [{ stage: "ANALYSIS", score: 88, sharedAt: "2026-11-08T12:00:00.000Z" }],
 					},
 				});
 			}
@@ -74,22 +75,28 @@ test("authenticated participant sees live options, deadlines, and released resul
 	await page.goto("/");
 	await page.getByRole("link", { name: "My submission" }).click();
 
+	await expect(page.getByRole("heading", { name: "My submission" })).toBeVisible();
 	await expect(page.getByRole("option", {
 		name: "180DC-VIT-CHENNAI/mazhai-cover",
 	})).toBeAttached();
 	await expect(page.getByText("12/1/2026", { exact: false })).toBeVisible();
-	await expect(page.getByText("Results are temporarily unavailable."))
-		.toBeVisible();
-	await expect(page.getByRole("heading", { name: "Team members" })).toBeVisible();
-	await expect(page.getByText("Round 2 is open")).toBeVisible();
 	await expect(page.getByRole("link", { name: /mazhai-cover #42/ })).toHaveAttribute("href", "https://github.com/180DC-VIT-CHENNAI/mazhai-cover/pull/42");
-	await expect(page.getByText("Not released", { exact: true })).toHaveCount(
-		0,
-	);
+	await expect(page.getByRole("heading", { name: "Team members" })).toHaveCount(0);
+	await expect(page.getByText("Round 2 is open")).toHaveCount(0);
+	await page.getByRole("link", { name: "Evaluation" }).click();
+	await expect(page).toHaveURL(/\/evaluation$/);
+	await expect(page.getByRole("heading", { name: "Evaluation" })).toBeVisible();
+	await expect(page.getByText("Results are temporarily unavailable.")).toBeVisible();
+	await expect(page.getByText("Unavailable", { exact: true })).toBeVisible();
 
 	resultsUnavailable = false;
 	await page.reload();
+	await expect(page.getByRole("heading", { name: "Evaluation" })).toBeVisible();
 	await expect(page.getByText(/82\.0.*final score/)).toBeVisible();
 	await expect(page.getByText("Well supported by evidence.")).toBeVisible();
 	await expect(page.getByText("Add edge case coverage.")).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Judge-shared stage scores" })).toBeVisible();
+	await expect(page.getByText("Analysis review", { exact: true })).toBeVisible();
+	await expect(page.getByText("88", { exact: true })).toBeVisible();
+	await expect(page.getByText("Judge A", { exact: true })).toHaveCount(0);
 });

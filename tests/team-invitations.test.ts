@@ -5,6 +5,7 @@ import { importTeams } from "../src/competition-teams";
 import worker from "../src/index";
 import {
 	dispatchTeamInvitations,
+	requestParticipantLoginCode,
 	verifyParticipant,
 } from "../src/team-invitations";
 import type { CompetitionServices } from "../src/competition-store";
@@ -150,6 +151,52 @@ describe("Unstop participant onboarding", () => {
 				"2026-11-08T12:00:01.000Z",
 			),
 		).toMatchObject({ status: 409 });
+	});
+	it("reissues one-use email login codes for an existing participant and rejects replay", async () => {
+		await imported();
+		const loginMessages: { idempotencyKey: string; to: string; body: string }[] = [];
+		env.TEAM_EMAIL_SENDER = {
+			fetch: async (request: RequestInfo | URL) => {
+				const message = await new Request(request).json() as { idempotencyKey: string; to: string; body: string };
+				loginMessages.push(message);
+				return Response.json({ accepted: true });
+			},
+		} as Fetcher;
+		const firstRequest = await requestParticipantLoginCode(env, "alice@example.test", Date.parse("2026-11-08T12:00:00Z"), "ip-a");
+		expect(firstRequest.status).toBe(202);
+		const firstCode = loginMessages[0]!.body.match(/[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}/)![0]!;
+		const firstLogin = await verifyParticipant(env, "alice@example.test", firstCode, "2026-11-08T12:01:00.000Z", "ip-a");
+		expect(firstLogin.status).toBe(200);
+		const secondRequest = await requestParticipantLoginCode(env, "alice@example.test", Date.parse("2026-11-08T13:00:00Z"), "ip-b");
+		expect(secondRequest.status).toBe(202);
+		const secondCode = loginMessages[1]!.body.match(/[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}/)![0]!;
+		const secondLogin = await verifyParticipant(env, "alice@example.test", secondCode, "2026-11-08T13:01:00.000Z", "ip-b");
+		expect(secondLogin).toMatchObject({ status: 200, identityId: firstLogin.identityId });
+		expect(await verifyParticipant(env, "alice@example.test", secondCode, "2026-11-08T13:02:00.000Z", "ip-b")).toMatchObject({ status: 401 });
+		expect(loginMessages.map(message => message.to)).toEqual(["alice@example.test", "alice@example.test"]);
+		expect(loginMessages[0]?.idempotencyKey).not.toBe(loginMessages[1]?.idempotencyKey);
+	});
+	it("allows only one concurrent login-code use and hides recipient-specific sender failures", async () => {
+		await imported();
+		env.TEAM_EMAIL_SENDER = {
+			fetch: async (request: RequestInfo | URL) => {
+				const message = await new Request(request).json() as { body: string };
+				sent.push({ to: "", idempotencyKey: "", body: message.body });
+				return Response.json({ accepted: true });
+			},
+		} as Fetcher;
+		await requestParticipantLoginCode(env, "alice@example.test", Date.parse("2026-11-08T12:00:00Z"), "ip-c");
+		const code = sent[0]!.body.match(/[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}/)![0]!;
+		const simultaneous = await Promise.all([
+			verifyParticipant(env, "alice@example.test", code, "2026-11-08T12:01:00.000Z", "ip-c"),
+			verifyParticipant(env, "alice@example.test", code, "2026-11-08T12:01:00.000Z", "ip-d"),
+		]);
+		expect(simultaneous.map(result => result.status).sort()).toEqual([200, 409]);
+		env.TEAM_EMAIL_SENDER = {
+			fetch: async () => new Response("provider unavailable", { status: 503 }),
+		} as unknown as Fetcher;
+		expect(await requestParticipantLoginCode(env, "alice@example.test", Date.parse("2026-11-08T14:00:00Z"), "ip-e")).toEqual({ status: 202 });
+		expect(await requestParticipantLoginCode(env, "unknown@example.test", Date.parse("2026-11-08T14:00:00Z"), "ip-e")).toEqual({ status: 202 });
 	});
 	it("rejects wrong email, expired code, inactive members, and limits attempts", async () => {
 		const team = await imported();

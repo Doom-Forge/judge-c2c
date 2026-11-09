@@ -3,6 +3,7 @@ import { Miniflare } from "./miniflare";
 import { readFileSync } from "node:fs";
 import { acceptMatrixPR, matrixApi } from "../src/matrix-service";
 import type { Env } from "../src/env";
+import type { GitHub } from "../src/github";
 import { acquireMatrixSlot, releaseMatrixSlot } from "../src/matrix-capacity";
 let mf: Miniflare, env: Env;
 const jobs: string[] = [];
@@ -40,6 +41,7 @@ beforeAll(async () => {
 			"0004_organization.sql",
 			"0027_matrix_judging.sql",
 			"0028_matrix_capacity.sql",
+		"0030_default_reviewer.sql",
 			"0031_matrix_cost_controls.sql",
 		]
 	) {
@@ -224,6 +226,162 @@ it("keeps a specification-required repo blocked even if a matrix row exists", as
 		error: "CHALLENGE_SPECIFICATION_REQUIRED",
 	});
 	expect(jobs).toHaveLength(0);
+});
+it("requests the default reviewer for a verified unconfigured PR without queuing evaluation", async () => {
+	const previousReviewer = env.DEFAULT_PR_REVIEWER;
+	env.DEFAULT_PR_REVIEWER = "Kevin272-dot";
+	const p = payload(
+		"b".repeat(40),
+		"2026-11-04T10:00:00Z",
+		1442222462,
+		"180DC-VIT-CHENNAI/mazhai-cover",
+	);
+	let reviewerRequests = 0;
+	let clientRequests = 0;
+	let reviewerTask: Promise<void> | undefined;
+	const clientFactory = async (repository: {
+		repository_id: number;
+		full_name: string;
+		installation_id: number;
+	}) => {
+		clientRequests++;
+		expect(repository).toEqual({
+			repository_id: 1442222462,
+			full_name: "180DC-VIT-CHENNAI/mazhai-cover",
+			installation_id: 42,
+		});
+		return {
+			api: async (path: string, init?: RequestInit) => {
+				if (path.endsWith("/requested_reviewers") && init?.method === "POST") {
+					reviewerRequests++;
+					expect(JSON.parse(String(init.body))).toEqual({
+						reviewers: ["Kevin272-dot"],
+					});
+					return {};
+				}
+				if (path.includes("/requested_reviewers")) return { users: [] };
+				if (path.includes("/reviews?")) return [];
+				return { state: "open", draft: false, user: { login: "participant" } };
+			},
+		} as unknown as Pick<GitHub, "api">;
+	};
+	const jobsBefore = jobs.length;
+	try {
+		for (const delivery of ["verified-reviewer-1", "verified-reviewer-2"]) {
+			const response = await acceptMatrixPR(
+				p,
+				env,
+				delivery,
+				delivery,
+				undefined,
+				{
+					clientFactory,
+					deferReviewer: (task) => {
+						reviewerTask = task;
+					},
+				},
+			);
+			expect(response.status).toBe(403);
+			expect(await response.json()).toEqual({
+				error: "CHALLENGE_SPECIFICATION_REQUIRED",
+			});
+			await reviewerTask;
+			reviewerTask = undefined;
+		}
+		expect(clientRequests).toBe(2);
+		expect(reviewerRequests).toBe(1);
+		expect(
+			await env.DB.prepare("SELECT COUNT(*) AS n FROM matrix_submissions")
+				.first("n"),
+		).toBe(0);
+		expect(
+			await env.DB.prepare("SELECT COUNT(*) AS n FROM matrix_runs").first("n"),
+		).toBe(0);
+		expect(jobs).toHaveLength(jobsBefore);
+	} finally {
+		env.DEFAULT_PR_REVIEWER = previousReviewer;
+	}
+});
+it("rejects unconfigured PR identity mismatches before requesting a reviewer", async () => {
+	const previousReviewer = env.DEFAULT_PR_REVIEWER;
+	env.DEFAULT_PR_REVIEWER = "Kevin272-dot";
+	let clientRequests = 0;
+	const clientFactory = async () => {
+		clientRequests++;
+		return { api: async () => ({}) } as unknown as Pick<GitHub, "api">;
+	};
+	const valid = payload(
+		"b".repeat(40),
+		"2026-11-04T10:00:00Z",
+		1442222462,
+		"180DC-VIT-CHENNAI/mazhai-cover",
+	);
+	const wrongId = payload(
+		"b".repeat(40),
+		"2026-11-04T10:00:00Z",
+		1442222499,
+		"180DC-VIT-CHENNAI/mazhai-cover",
+	);
+	const wrongInstallation = { ...valid, installation: { id: 999 } };
+	const wrongBase = {
+		...valid,
+		pull_request: {
+			...valid.pull_request,
+			base: { repo: { id: 1442222499 } },
+		},
+	};
+	const jobsBefore = jobs.length;
+	const reviewersBefore = await env.DB.prepare(
+		"SELECT COUNT(*) AS n FROM matrix_default_reviewers",
+	).first("n");
+	try {
+		for (const [event, delivery] of [
+			[wrongId, "wrong-repository-id"],
+			[wrongInstallation, "wrong-installation"],
+			[wrongBase, "wrong-base-repository"],
+		] as const) {
+			const response = await acceptMatrixPR(
+				event,
+				env,
+				delivery,
+				delivery,
+				undefined,
+				{ clientFactory },
+			);
+			expect(response.status).toBe(403);
+			expect(await response.json()).toEqual({ error: "REPOSITORY_NOT_SELECTED" });
+		}
+		await env.DB.prepare(
+			"UPDATE github_repositories SET accessible=0 WHERE id=?",
+		)
+			.bind(1442222462)
+			.run();
+		const inaccessible = await acceptMatrixPR(
+			valid,
+			env,
+			"inaccessible-repository",
+			"inaccessible-repository",
+			undefined,
+			{ clientFactory },
+		);
+		expect(inaccessible.status).toBe(403);
+		expect(await inaccessible.json()).toEqual({
+			error: "REPOSITORY_NOT_SELECTED",
+		});
+		expect(clientRequests).toBe(0);
+		expect(
+			await env.DB.prepare("SELECT COUNT(*) AS n FROM matrix_default_reviewers")
+				.first("n"),
+		).toBe(reviewersBefore);
+		expect(jobs).toHaveLength(jobsBefore);
+	} finally {
+		await env.DB.prepare(
+			"UPDATE github_repositories SET accessible=1 WHERE id=?",
+		)
+			.bind(1442222462)
+			.run();
+		env.DEFAULT_PR_REVIEWER = previousReviewer;
+	}
 });
 it("queues once, rejects conflicting replay, and supersedes on new head", async () => {
 	const first = await acceptMatrixPR(payload(), env, "delivery-1", "hash-1");

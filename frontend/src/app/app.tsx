@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
-import { ApiError, getOrganizationStatus, loginLinkedParticipantWithGitHub, loginOrganization, logoutOrganization, verifyParticipant } from "@/lib/api";
+import { ApiError, getOrganizationStatus, loginLinkedParticipantWithGitHub, loginOrganization, logoutOrganization, requestParticipantCode, verifyParticipant } from "@/lib/api";
 import { SessionNotice } from "@/app/session-notice";
 import type { Role, Session } from "@/types/session";
 
@@ -83,6 +83,21 @@ function Workspace() {
 		}
 	}, [refreshSession]);
 
+	const participantCodeRequest = useCallback(async (email: string): Promise<boolean> => {
+		setAuthError(null);
+		try {
+			await requestParticipantCode(email);
+			return true;
+		} catch (error) {
+			setAuthError(error instanceof ApiError && error.code === "PARTICIPANT_EMAIL_UNAVAILABLE"
+				? "Email sign-in is temporarily unavailable. Contact the organizers to activate participant email delivery."
+				: error instanceof ApiError && error.code === "VERIFICATION_RATE_LIMIT"
+					? "Too many sign-in attempts. Wait a few minutes before requesting another code."
+					: error instanceof Error ? error.message : "A sign-in code could not be sent.");
+			return false;
+		}
+	}, []);
+
 	const logout = useCallback(async () => {
 		setAuthError(null);
 		try {
@@ -93,11 +108,13 @@ function Workspace() {
 		}
 	}, [refreshSession]);
 
+	const clearAuthError = useCallback(() => setAuthError(null), []);
+
 	if (!sessionReady) {
 		return <main className="session-page"><p role="status">Checking organization session…</p></main>;
 	}
 	if (session.kind !== "live") {
-		return <SessionNotice onParticipantVerify={participantVerify} onSignIn={signIn} session={session} signInError={authError} />;
+		return <SessionNotice onClearError={clearAuthError} onParticipantCodeRequest={participantCodeRequest} onParticipantVerify={participantVerify} onSignIn={signIn} session={session} signInError={authError} />;
 	}
 
 	const role = session.status.role;
@@ -106,7 +123,7 @@ function Workspace() {
 		? <OrganizerCommandCenter focus={focus} session={session} />
 		: denied("organizer");
 	const queue = role === "judge" ? <JudgeOverview role="judge" /> : denied("judge");
-	const participant = role === "participant" ? <ParticipantDashboard /> : denied("participant");
+	const participant = (view: "overview" | "submission" | "evaluation" = "overview") => role === "participant" ? <ParticipantDashboard view={view} /> : denied("participant");
 	const workspace = role === "judge" ? <JudgeWorkspaceRoute /> : denied("judge");
 
 	return (
@@ -117,7 +134,7 @@ function Workspace() {
 				{authError && <div className="session-error" role="alert">{authError}</div>}
 				<Suspense fallback={<div className="loading-indicator" role="status">Loading workspace…</div>}>
 					<Routes>
-						<Route element={role === "organizer" ? org() : role === "judge" ? queue : participant} path="/" />
+						<Route element={role === "organizer" ? org() : role === "judge" ? queue : participant()} path="/" />
 						<Route element={org("teams")} path="/teams" />
 						<Route element={org("assignments")} path="/assignments" />
 						<Route element={org("deadlines")} path="/deadlines" />
@@ -129,8 +146,8 @@ function Workspace() {
 						<Route element={queue} path="/queue" />
 						<Route element={workspace} path="/workspace" />
 						<Route element={workspace} path="/history" />
-						<Route element={participant} path="/submission" />
-						<Route element={participant} path="/evaluation" />
+						<Route element={participant("submission")} path="/submission" />
+						<Route element={participant("evaluation")} path="/evaluation" />
 						<Route element={org("github")} path="/repositories" />
 						<Route element={<Navigate replace to="/" />} path="*" />
 					</Routes>

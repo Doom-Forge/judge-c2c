@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { createAssignment, createIdentity, getGitHubStatus, getIdentities, getRepositories, getRubric, getTeams, getJudgeAssignments, publishRubric, revokeAssignment, revokeIdentity, syncRepositories, type ConsoleIdentity, type JudgeAssignment, type RepositoryRecord, type RubricCriterion, type TeamRecord } from "./command-center/api";
+import { createAssignment, createIdentity, getGitHubStatus, getIdentities, getRepositories, getRubric, getTeams, getJudgeAssignments, publishRubric, revokeAssignment, revokeIdentity, syncRepositories, rubricCategories, type ConsoleIdentity, type JudgeAssignment, type RepositoryRecord, type RubricCategory, type RubricCriterion, type TeamRecord } from "./command-center/api";
 
 function ErrorLine({ children }: { children: string }) { return <p className="text-sm text-[var(--error)]" role="alert">{children}</p>; }
 
@@ -119,7 +119,20 @@ export function RubricManagementPanel() {
     if (!repositoryId) { setCriteria([]); setHistory([]); return; }
     void getRubric(Number(repositoryId)).then(result => { setCriteria(result.active?.criteria ?? []); setHistory(result.versions); setError(""); }).catch(cause => setError(cause instanceof Error ? cause.message : "Rubric unavailable."));
   }, [repositoryId]);
-  function update(index: number, field: keyof RubricCriterion, value: string) { setCriteria(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: field === "weight" ? Number(value) : value } : item)); }
+  function update(index: number, field: "id" | "label" | "weight" | "category", value: string) {
+    setCriteria(current => current.map((item, itemIndex) => {
+      if (itemIndex !== index) return item;
+      if (field === "weight") return { ...item, weight: Number(value) };
+      if (field === "category") {
+        if (!value) {
+          const { category: _category, ...withoutCategory } = item;
+          return withoutCategory;
+        }
+        return { ...item, category: value as RubricCategory };
+      }
+      return { ...item, [field]: value };
+    }));
+  }
   async function publish(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 		if (!repositoryId || criteria.length === 0 || new Set(criteria.map(item => item.id)).size !== criteria.length || criteria.some(item => !item.id || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(item.id) || !item.label.trim() || !Number.isInteger(item.weight) || item.weight < 1) || criteria.reduce((sum, item) => sum + item.weight, 0) !== 100) { setError("Use unique lowercase criterion IDs, nonempty labels, positive whole-number weights, and a total weight of 100."); return; }
@@ -131,7 +144,7 @@ export function RubricManagementPanel() {
   return <Card id="organizer-rubrics"><CardHeader><div><CardTitle>Track rubrics</CardTitle><CardDescription>Edit and publish versioned criteria for a synchronized repository; no default rubric is assumed.</CardDescription></div></CardHeader><CardContent className="space-y-3">
     {error && <ErrorLine>{error}</ErrorLine>}{message && <p role="status">{message}</p>}
     <label className="grid max-w-sm gap-1 text-sm">Repository<select value={repositoryId} onChange={event => setRepositoryId(event.currentTarget.value)}><option value="">Select repository</option>{repositories.filter(item => item.accessible).map(item => <option key={item.id} value={item.id}>{item.full_name}</option>)}</select></label>
-		{repositoryId && <form className="space-y-3" onSubmit={event => void publish(event)}><div className="flex flex-wrap gap-3">{criteria.map((item, index) => <fieldset className="grid min-w-56 gap-2 rounded border border-[var(--border)] p-3" key={`${item.id}-${index}`}><legend>{item.id}</legend><label className="grid gap-1 text-sm">Criterion ID<input required value={item.id} onChange={event => update(index, "id", event.currentTarget.value)} /></label><label className="grid gap-1 text-sm">Label<input required value={item.label} onChange={event => update(index, "label", event.currentTarget.value)} /></label><label className="grid gap-1 text-sm">Weight<input required type="number" min="1" max="100" value={item.weight} onChange={event => update(index, "weight", event.currentTarget.value)} /></label><Button type="button" variant="secondary" onClick={() => setCriteria(current => current.filter((_, itemIndex) => itemIndex !== index))}>Remove criterion</Button></fieldset>)}</div><p>Total weight: {criteria.reduce((sum, item) => sum + item.weight, 0)} / 100</p><div className="flex gap-2"><Button type="button" variant="secondary" onClick={() => setCriteria(current => { let number = current.length + 1; while (current.some(item => item.id === `criterion-${number}`)) number++; return [...current, { id: `criterion-${number}`, label: "", weight: 1 }]; })}>Add criterion</Button><Button disabled={busy}>{busy ? "Publishing…" : "Publish new rubric version"}</Button></div></form>}
+		{repositoryId && <form className="space-y-3" onSubmit={event => void publish(event)}><div className="flex flex-wrap gap-3">{criteria.map((item, index) => <fieldset className="grid min-w-56 gap-2 rounded border border-[var(--border)] p-3" key={`${item.id}-${index}`}><legend>{item.id}</legend><label className="grid gap-1 text-sm">Criterion ID<input required value={item.id} onChange={event => update(index, "id", event.currentTarget.value)} /></label><label className="grid gap-1 text-sm">Label<input required value={item.label} onChange={event => update(index, "label", event.currentTarget.value)} /></label><label className="grid gap-1 text-sm">Weight<input required type="number" min="1" max="100" value={item.weight} onChange={event => update(index, "weight", event.currentTarget.value)} /></label><label className="grid gap-1 text-sm">Category (optional)<select value={item.category ?? ""} onChange={event => update(index, "category", event.currentTarget.value)}><option value="">No category selected</option>{rubricCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></label>{item.category && <p className="text-xs text-[var(--muted)]">Current category: {item.category}</p>}<Button type="button" variant="secondary" onClick={() => setCriteria(current => current.filter((_, itemIndex) => itemIndex !== index))}>Remove criterion</Button></fieldset>)}</div><p>Total weight: {criteria.reduce((sum, item) => sum + item.weight, 0)} / 100</p><div className="flex gap-2"><Button type="button" variant="secondary" onClick={() => setCriteria(current => { let number = current.length + 1; while (current.some(item => item.id === `criterion-${number}`)) number++; return [...current, { id: `criterion-${number}`, label: "", weight: 1 }]; })}>Add criterion</Button><Button disabled={busy}>{busy ? "Publishing…" : "Publish new rubric version"}</Button></div></form>}
     {history.length > 0 && <details><summary>Version history ({history.length})</summary><ol>{history.map(item => <li key={item.id}>v{item.version} · {new Date(item.created_at).toLocaleString()} · {item.criteria.length} criteria</li>)}</ol></details>}
   </CardContent></Card>;
 }

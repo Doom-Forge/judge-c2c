@@ -5,6 +5,7 @@ export default defineConfig({
 	testMatch: [
 		"shell.spec.ts",
 		"participant-dashboard.spec.ts",
+		"participant-auth.spec.ts",
 		"judge-flow.spec.ts",
 		"organizer-command-center.spec.ts",
 	],

@@ -46,6 +46,8 @@ test("authenticated judge opens assigned team evidence, saves, submits, and revi
 	page,
 }) => {
 	const actions: string[] = [];
+	const sharingActions: boolean[] = [];
+	const sharedReviewIds = new Set<string>();
 	let draft: Record<string, unknown> | null = null;
 	let submissions: Record<string, unknown>[] = [];
 	await page.route("**/api/organization/**", async (route) => {
@@ -84,6 +86,13 @@ test("authenticated judge opens assigned team evidence, saves, submits, and revi
 				automatedEvaluation: { status: "available", state: "completed", failureCode: null, checks: [{ id: "check-1", category: "test", status: "passed", detail: "Tests passed" }], categories: {}, overallScore: null },
 			} });
 		}
+		if (url.pathname === "/api/organization/round-two/reviews/share" && request.method() === "POST") {
+			const body = request.postDataJSON() as { reviewId: string; shared: boolean };
+			sharingActions.push(body.shared);
+			if (body.shared) sharedReviewIds.add(body.reviewId);
+			else sharedReviewIds.delete(body.reviewId);
+			return route.fulfill({ json: { reviewId: body.reviewId, shared: body.shared } });
+		}
 		if (url.pathname === "/api/organization/round-two/reviews" && request.method() === "GET") {
 			const stage = url.searchParams.get("stage");
 			return route.fulfill({
@@ -98,7 +107,7 @@ test("authenticated judge opens assigned team evidence, saves, submits, and revi
 					documentStale: false,
 					draft,
 					drafts: draft ? [draft] : [],
-					submissions,
+					submissions: submissions.map((item) => ({ ...item, scoreShared: sharedReviewIds.has(String(item.id)) })),
 				},
 			});
 		}
@@ -108,11 +117,11 @@ test("authenticated judge opens assigned team evidence, saves, submits, and revi
 			actions.push(action);
 			if (action === "SAVE_DRAFT") draft = { score: 88, payload: body.feedback, document_id: "doc-alpha" };
 			if (action === "SUBMIT") {
-				submissions = [{ score: 88, payload: draft?.payload, document_id: "doc-alpha", revision: 1, reason: "Initial submission", submitted_at: "2026-11-08T11:00:00Z" }];
+				submissions = [{ id: "review-1", score: 88, payload: draft?.payload, document_id: "doc-alpha", revision: 1, reason: "Initial submission", submitted_at: "2026-11-08T11:00:00Z" }];
 				draft = null;
 			}
 			if (action === "REVISE") {
-				submissions = [{ score: 90, payload: body.feedback, document_id: "doc-alpha", revision: 2, reason: body.reason, submitted_at: "2026-11-08T12:00:00Z" }, ...submissions];
+				submissions = [{ id: "review-2", score: 90, payload: body.feedback, document_id: "doc-alpha", revision: 2, reason: body.reason, submitted_at: "2026-11-08T12:00:00Z" }, ...submissions];
 			}
 			return route.fulfill({ json: { ok: true } });
 		}
@@ -146,7 +155,12 @@ test("authenticated judge opens assigned team evidence, saves, submits, and revi
 	await page.getByLabel("Reason for revision").fill("Clarified evidence after a second pass.");
 	await page.getByRole("button", { name: "Submit revision" }).click();
 	await expect(page.getByText(/revision 2/)).toBeVisible();
+	await page.getByRole("button", { name: "Share stage score" }).click();
+	await expect(page.getByText(/Your stage score is selected to share/)).toBeVisible();
+	await page.getByRole("button", { name: "Stop sharing score" }).click();
+	await expect(page.getByText(/Your stage score is no longer selected/)).toBeVisible();
 	await expect(actions).toEqual(["SAVE_DRAFT", "SUBMIT", "REVISE"]);
+	await expect(sharingActions).toEqual([true, false]);
 });
 
 test("signed-out users can sign in and empty judges do not see sample submissions", async ({
@@ -203,8 +217,26 @@ test("shared organizer sessions with a null identity id reach real organizer con
 	});
 
 	await page.goto("/");
-	await expect(page.getByRole("heading", { name: "Organizer Command Center" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Organizer command center" })).toBeVisible();
+	await expect(page.getByRole("link", { name: "Teams", exact: true })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Judging progress" })).toBeVisible();
+	await page.getByRole("link", { name: "Teams", exact: true }).click();
+	await expect(page).toHaveURL(/\/teams$/);
+	await expect(page.getByRole("heading", { name: "Team roster" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Import teams" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Judging progress" })).toHaveCount(0);
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+	await page.getByRole("button", { name: "Open navigation" }).click();
 	await page.getByRole("link", { name: "Assignments" }).click();
+	await expect(page).toHaveURL(/\/assignments$/);
 	await expect(page.getByRole("heading", { name: "Judges and assignments" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "Create judge" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Team roster" })).toHaveCount(0);
+	await page.goBack();
+	await expect(page).toHaveURL(/\/teams$/);
+	await expect(page.getByRole("heading", { name: "Team roster" })).toBeVisible();
+	await page.goto("/communications");
+	await expect(page.getByRole("heading", { name: "Participant communications" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Announcements" })).toBeVisible();
 });

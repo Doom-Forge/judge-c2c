@@ -41,6 +41,37 @@ describe("round two scoring", () => {
 		).toBe(91);
 	});
 
+	it("accepts an optional rubric category while retaining legacy three-field criteria", () => {
+		const rubric = validateTrackRubric([
+			{ id: "tests", label: "Automated tests", weight: 60 },
+			{
+				id: "reproducibility",
+				label: "Reproducibility",
+				weight: 40,
+				category: "Reproducibility",
+			},
+		]);
+
+		expect(rubric[0]).not.toHaveProperty("category");
+		expect(rubric[1]?.category).toBe("Reproducibility");
+		expect(
+			normalizeEngineeringScore(rubric, [
+				{ criterionId: "tests", score: 80 },
+				{ criterionId: "reproducibility", score: 100 },
+			]),
+		).toBe(88);
+		expect(() =>
+			validateTrackRubric([
+				{
+					id: "tests",
+					label: "Automated tests",
+					weight: 100,
+					category: "Code quality and maintainability",
+				},
+			]),
+		).toThrow();
+	});
+
 	it("averages submitted judges and applies the ten ninety formula", () => {
 		expect(calculateTeamScore([80, 84], [90, 92])).toEqual({
 			status: "READY",

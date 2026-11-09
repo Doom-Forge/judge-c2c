@@ -39,6 +39,7 @@ type CriterionScore = {
 	comment: string;
 };
 type ReviewRecord = {
+	id?: string | undefined;
 	score: number | null;
 	payload: Record<string, unknown>;
 	document_id: string | null;
@@ -47,6 +48,8 @@ type ReviewRecord = {
 	submitted_at?: string | undefined;
 	updated_at?: string | undefined;
 	rubric_version_id?: string | null | undefined;
+	scoreShared?: boolean | undefined;
+	includedInPublishedSnapshot?: boolean | undefined;
 };
 type ReviewData = {
 	currentDocument: {
@@ -175,6 +178,7 @@ export function JudgeWorkspace({
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
+	const [sharingReviewId, setSharingReviewId] = useState<string | null>(null);
 	const refreshRequest = useRef(0);
 
 	const refresh = useCallback(async () => {
@@ -430,6 +434,27 @@ export function JudgeWorkspace({
 			setError(errorText(cause));
 		} finally {
 			setSaving(false);
+		}
+	}
+
+	async function updateScoreSharing(item: ReviewRecord, shared: boolean) {
+		if (!item.id || !teamId) return;
+		setSharingReviewId(item.id);
+		setError(null);
+		setNotice(null);
+		try {
+			await request("/reviews/share", {
+				method: "POST",
+				body: JSON.stringify({ teamId, stage, reviewId: item.id, shared }),
+			});
+			setNotice(shared
+				? "Your stage score is selected to share with this team. It appears only in results published from a snapshot containing this review."
+				: "Your stage score is no longer selected to share with this team.");
+			await refresh();
+		} catch (cause) {
+			setError(errorText(cause));
+		} finally {
+			setSharingReviewId(null);
 		}
 	}
 	async function downloadDocument(document: Document) {
@@ -1393,6 +1418,27 @@ export function JudgeWorkspace({
 														</summary>
 														<pre>{JSON.stringify(item.payload, null, 2)}</pre>
 													</details>
+													{item.id && (index === 0 || item.scoreShared || item.includedInPublishedSnapshot) && (
+														<div className="jw-score-sharing">
+															<div>
+																<strong>{item.scoreShared ? "Stage score selected to share" : "Stage score is private"}</strong>
+																<p>{item.includedInPublishedSnapshot
+																	? "This exact review is part of the current published snapshot."
+																	: "Sharing appears to participants only after an organizer publishes a snapshot containing this exact review."}</p>
+															</div>
+															<button
+															className="jw-button jw-button-secondary"
+															disabled={sharingReviewId !== null}
+															onClick={() => void updateScoreSharing(item, !item.scoreShared)}
+															type="button"
+															aria-pressed={item.scoreShared === true}
+														>
+															{sharingReviewId === item.id
+																? "Saving…"
+																: item.scoreShared ? "Stop sharing score" : "Share stage score"}
+														</button>
+														</div>
+													)}
 												</div>
 											))}
 											{(review?.drafts ?? []).map((

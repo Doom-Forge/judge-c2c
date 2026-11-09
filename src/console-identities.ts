@@ -4,6 +4,7 @@ import { contractSchema, digest, type Evidence } from "./domain";
 import { requirementOutcomes } from "./requirement-assessment";
 import { participantDocuments } from "./round-two-documents";
 import { arenaGithubIdentity } from "./participant-github";
+import { participantSharedScores } from "./round-two-score-sharing";
 import type { Env } from "./env";
 export type ConsoleRole = "organizer" | "judge" | "security" | "participant";
 export type ConsoleSession = {
@@ -219,6 +220,17 @@ export async function participantConsole(
 				linked.status,
 			);
 		}
+		let requestedLogin: string;
+		try {
+			requestedLogin = z.object({ login: z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$/) }).strict().parse(
+				JSON.parse(new TextDecoder().decode(await boundedBody(request, 2000))),
+			).login;
+		} catch {
+			return json({ error: "GITHUB_USERNAME_REQUIRED" }, 400);
+		}
+		if (requestedLogin.toLowerCase() !== linked.identity.login.toLowerCase()) {
+			return json({ error: "GITHUB_USERNAME_MISMATCH" }, 409);
+		}
 		if (member.github_id !== null) {
 			if (member.github_id !== linked.identity.id) {
 				return json({ error: "GITHUB_IDENTITY_CHANGE_REQUIRES_ORGANIZER" }, 409);
@@ -419,9 +431,9 @@ export async function participantConsole(
 		if (!team) return json({ error: "UNAUTHORIZED" }, 401);
 		const publication = await db
 			.prepare(
-				"SELECT s.snapshot FROM round_two_result_publication p JOIN round_two_result_snapshots s ON s.id=p.snapshot_id WHERE p.id=1 AND p.snapshot_id IS NOT NULL AND p.published_at IS NOT NULL",
+				"SELECT s.id AS snapshotId,s.snapshot FROM round_two_result_publication p JOIN round_two_result_snapshots s ON s.id=p.snapshot_id WHERE p.id=1 AND p.snapshot_id IS NOT NULL AND p.published_at IS NOT NULL",
 			)
-			.first<{ snapshot: string }>();
+			.first<{ snapshotId: string; snapshot: string }>();
 		if (!publication) return json({ published: false });
 		try {
 			const snapshot = JSON.parse(publication.snapshot) as {
@@ -434,7 +446,16 @@ export async function participantConsole(
 			const ranking = snapshot.ranking?.filter(
 				(result) => result.teamId === session.team_id,
 			) ?? [];
-			return json({ published: true, results, ranking });
+			return json({
+				published: true,
+				results,
+				ranking,
+				sharedStageScores: await participantSharedScores(
+					db,
+					session.team_id,
+					publication.snapshotId,
+				),
+			});
 		} catch {
 			return json({ error: "RESULTS_UNAVAILABLE" }, 503);
 		}

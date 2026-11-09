@@ -38,6 +38,8 @@ export const migrationFiles = [
 	"0042_hackathon_deadlines.sql",
 	"0043_round_two_announcements.sql",
 	"0044_email_only_team_members.sql",
+	"0045_participant_email_login.sql",
+	"0046_round_two_review_score_sharing.sql",
 ] as const;
 export async function migrate(
 	db: D1Database,

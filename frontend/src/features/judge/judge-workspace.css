@@ -606,6 +606,33 @@
 .jw-history-entry .jw-history-row {
   border-top: 0;
 }
+.jw-score-sharing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 12px;
+  border: 1px solid var(--jw-line);
+  border-radius: 7px;
+  background: var(--raised);
+  padding: 10px 12px;
+}
+.jw-score-sharing > div {
+  min-width: 0;
+}
+.jw-score-sharing strong {
+  color: var(--jw-text);
+  font-size: 13px;
+}
+.jw-score-sharing p {
+  margin: 3px 0 0;
+  color: var(--jw-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.jw-score-sharing .jw-button {
+  flex: 0 0 auto;
+}
 .jw-history-detail {
   padding: 0 0 10px;
   color: var(--jw-muted);
@@ -695,6 +722,13 @@
     flex-basis: 75%;
   }
   .jw-history-row time {
+    width: 100%;
+  }
+  .jw-score-sharing {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .jw-score-sharing .jw-button {
     width: 100%;
   }
 }

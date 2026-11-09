@@ -1,10 +1,21 @@
 import { z } from "zod";
 
+export const rubricCategories = [
+	"Functional correctness",
+	"Security",
+	"Performance and scalability",
+	"Code quality",
+	"Innovation and usefulness",
+	"Reproducibility",
+] as const;
+export type RubricCategory = (typeof rubricCategories)[number];
+
 const criterionSchema = z
 	.object({
 		id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,79}$/),
 		label: z.string().trim().min(1).max(160),
 		weight: z.number().int().min(1).max(100),
+		category: z.enum(rubricCategories).optional(),
 	})
 	.strict();
 const criterionScoreSchema = z
