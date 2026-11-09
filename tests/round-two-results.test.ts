@@ -561,7 +561,7 @@ describe("private 10/90 results aggregation", () => {
 			env,
 			organizer,
 		);
-		const snapshot = await response.json() as { snapshot: { results: Array<{ teamId: string; feedback?: { analysis: Array<Record<string, unknown>> } }> } };
+		const snapshot = await response.json() as { snapshot: { results: Array<{ teamId: string; feedback?: { analysis: Array<Record<string, unknown>>; engineering: Array<Record<string, unknown>> }; feedbackTruncated?: boolean }>; ranking: Array<Record<string, unknown>> } };
 		const team = snapshot.snapshot.results.find(item => item.teamId === "team-a");
 		expect(response.status).toBe(201);
 		expect(team?.feedback?.analysis).toEqual([{
@@ -571,6 +571,10 @@ describe("private 10/90 results aggregation", () => {
 			overall: "Final submitted comment",
 		}]);
 		expect(JSON.stringify(snapshot)).not.toContain("Private draft comment");
+		expect(snapshot.snapshot.ranking.every(item => !("feedback" in item))).toBe(true);
+		const feedbackBytes = snapshot.snapshot.results.reduce((total, result) => total + new TextEncoder().encode(JSON.stringify(result.feedback ?? null)).byteLength, 0);
+		expect(feedbackBytes).toBeLessThanOrEqual(512 * 1024);
+		expect(new TextEncoder().encode(JSON.stringify(team?.feedback ?? null)).byteLength).toBeLessThanOrEqual(8 * 1024);
 	});
 
 	it("freezes score results and publishes only complete snapshots", async () => {
