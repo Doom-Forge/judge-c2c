@@ -33,7 +33,7 @@ import { api } from './api';
 import { aiReview, objective } from './evaluate';
 import { demoContract } from './demo';
 import { runnerDiagnostic } from './runner-diagnostic';
-import { diagnoseMatrixContainers, readDiagnosticSources } from './matrix-container-diagnostic';
+import { diagnoseMatrixContainers, DiagnosticSourceError, readDiagnosticSources } from './matrix-container-diagnostic';
 import { webhook } from './intake';
 import { competition } from './competition';
 import { roundTwoReview } from './round-two-review';
@@ -954,7 +954,17 @@ export async function organization(
       janus: z.string().regex(/^[a-f0-9]{40}$/),
     }).strict().safeParse(await input(request, 1024));
     if (!commits.success) return json({ error: 'INVALID_INPUT' }, 400);
-    const bucket = 'matrix-container-diagnostic:' + Math.floor(Date.now() / 1800000);
+    let sources;
+    try {
+      sources = await readDiagnosticSources(commits.data);
+    } catch (error) {
+      return json({
+        error: 'MATRIX_DIAGNOSTIC_SOURCE_UNAVAILABLE',
+        repository: error instanceof DiagnosticSourceError ? error.repository : null,
+        sourceStatus: error instanceof DiagnosticSourceError ? error.sourceStatus : 'FETCH_FAILED',
+      }, 424);
+    }
+    const bucket = 'matrix-container-diagnostic-v2:' + Math.floor(Date.now() / 1800000);
     await env.ORG_DB.prepare(
       'INSERT INTO organizer_login_limits(bucket,count) VALUES(?,1) ON CONFLICT(bucket) DO UPDATE SET count=count+1',
     ).bind(bucket).run();
@@ -962,12 +972,6 @@ export async function organization(
       'SELECT count FROM organizer_login_limits WHERE bucket=?',
     ).bind(bucket).first<{ count: number }>();
     if ((limit?.count ?? 0) > 2) return json({ error: 'MATRIX_DIAGNOSTIC_RATE_LIMIT' }, 429);
-    let sources;
-    try {
-      sources = await readDiagnosticSources(commits.data);
-    } catch {
-      return json({ error: 'MATRIX_DIAGNOSTIC_SOURCE_UNAVAILABLE' }, 424);
-    }
     const result = await diagnoseMatrixContainers(env, sources);
     await env.ORG_DB.prepare('INSERT INTO audit(action,entity) VALUES(?,?)')
       .bind('matrix.container.diagnostic', redact(canonical(result))).run();

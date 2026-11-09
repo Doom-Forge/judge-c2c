@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { diagnoseMatrixContainers, readDiagnosticSources } from '../src/matrix-container-diagnostic';
+import { DiagnosticSourceError, diagnoseMatrixContainers, readDiagnosticSources } from '../src/matrix-container-diagnostic';
 import type { Env } from '../src/env';
 
 function namespace(repository: string, status = 'READY') {
@@ -40,7 +40,8 @@ it('reports an incomplete status if any container cannot be checked', async () =
 
 it('loads only the fixed diagnostic path at each exact public repository SHA', async () => {
   const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-    expect(init?.redirect).toBe('error');
+    expect(init?.redirect).toBe('manual');
+    expect(new Headers(init?.headers).get('user-agent')).toBe('Doomforge-Matrix-Diagnostic');
     return new Response('print("CONTAINER_DIAGNOSTIC_OK")\n');
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -57,13 +58,24 @@ it('loads only the fixed diagnostic path at each exact public repository SHA', a
   }
 });
 
-it('rejects malformed refs and refuses redirects or oversized diagnostic source', async () => {
+it('rejects malformed refs and refuses manual redirects or oversized diagnostic source', async () => {
   await expect(readDiagnosticSources({})).rejects.toThrow();
-  vi.stubGlobal('fetch', vi.fn(async () => new Response('redirect', { status: 302 })));
+  const commits = Object.fromEntries(
+    ['mazhai-cover', 'pricingpulse', 'veera-footwear', 'janus'].map((repo) => [repo, 'b'.repeat(40)]),
+  );
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('redirect', { status: 302, headers: { location: 'https://example.invalid/' } })));
   try {
-    await expect(readDiagnosticSources(Object.fromEntries(
-      ['mazhai-cover', 'pricingpulse', 'veera-footwear', 'janus'].map((repo) => [repo, 'b'.repeat(40)]),
-    ))).rejects.toThrow('MATRIX_DIAGNOSTIC_SOURCE_UNAVAILABLE');
+    await expect(readDiagnosticSources(commits)).rejects.toMatchObject({
+      repository: 'mazhai-cover', sourceStatus: 'HTTP_302',
+    } satisfies Partial<DiagnosticSourceError>);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('x'.repeat(4097))));
+    await expect(readDiagnosticSources(commits)).rejects.toMatchObject({
+      repository: 'mazhai-cover', sourceStatus: 'SOURCE_LIMIT',
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('not found', { status: 404 })));
+    await expect(readDiagnosticSources(commits)).rejects.toMatchObject({
+      repository: 'mazhai-cover', sourceStatus: 'HTTP_404',
+    });
   } finally {
     vi.unstubAllGlobals();
   }
