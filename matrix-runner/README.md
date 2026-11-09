@@ -55,3 +55,55 @@ The canaries intentionally implement only this small public matrix surface. A
 passing synthetic canary is a transport/judge smoke test, never an evaluation of
 a real submission. Dependencies are exact pins, the Python base is digest-pinned,
 and `pip check` runs during the build. No runtime package downloads occur.
+
+## Challenge brief checker primitives
+
+`challenge_checks.py` adds pure trusted validators for brief-defined portions
+of Veera Footwear and PricingPulse. It returns metric evidence states only and
+does not calculate participant marks or import participant code. Its unit
+tests use synthetic organizer inputs. The existing controller does not call
+these helpers yet, so they do not enable official judging by themselves.
+
+Veera checks exact portfolio row and unique-ID counts, integer post allocations
+from one to three, spend under ₹40,00,000 using canonical per-post prices,
+platform spend shares no greater than 50%, at least three organizer-classified
+regional creators, and exclusion of known adjudicated fake creators. The
+validator accepts canonical creator records, the platform catalog, and fake
+labels as separate organizer inputs. Missing catalog, cost, regional, platform,
+or label evidence yields `UNVERIFIED` for the affected check. It ignores
+participant-provided prices and fake labels. A known fake selection remains a
+failure even when other labels are missing.
+
+The briefs in `repos/` do not include the 400 canonical creator records, the
+80 adjudicated fake labels, platform vocabulary, hidden buyer simulator, fixed
+scenarios, or approved buyer-score normalization. Those artifacts and a
+versioned, owner-approved scoring configuration are required before Veera
+results can be published. The brief defines only 60 marks and leaves 40
+unallocated. No marks or ranking are inferred here.
+
+PricingPulse validates supplied-input revenue, profit, margin, discounted
+price, post-discount revenue and profit, and post-discount margin. The scenario
+must provide post-discount quantity and costs before those outputs can be
+checked. Missing assumptions leave the discount checks `UNVERIFIED`. The
+organizer must supply the allowed discount range and cost assumptions. Rates
+outside zero through one are invalid. When the organizer's maximum is absent,
+arithmetic can still be compared, while the rate-range check stays
+`UNVERIFIED`. Zero-revenue margins must be represented as JSON `null`. Invalid
+and non-finite inputs require an explicit `INVALID_INPUT` response.
+
+PricingPulse's briefs do not provide hidden demand scenarios, an elasticity
+convention, reference optima, or approved weights. The arithmetic helpers do
+not evaluate demand quality, tier usability, recommendations, or assign scores.
+Those inputs and an approved scoring configuration remain required.
+
+The module also exposes Mazhai's published weighted-MAPE, P99 log-error, and
+loss-ratio gate-factor formulas without mapping them to marks. Hidden seasonal
+data, storm and data-quality fixtures, test labels, and organizer-calibrated
+thresholds are still required. Proposed thresholds in the metric brief are not
+treated as frozen official scoring rules.
+
+Run the deterministic checker tests with:
+
+```sh
+python3 -m unittest discover -s matrix-runner/tests -p 'test_challenge_checks.py' -v
+```
