@@ -23,6 +23,12 @@ class ControllerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 c.validate_snapshot({'repository':'noyyal-treasury','files':files})
 
+    def test_new_competition_repositories_fail_closed_without_runner_profiles(self):
+        c = self.controller()
+        for repo in ('mazhai-cover', 'pricingpulse', 'veera-footwear', 'janus'):
+            with self.subTest(repository=repo), self.assertRaisesRegex(ValueError, 'unsupported repository'):
+                c.validate_snapshot({'repository':repo,'files':[]})
+
     def test_forecast_abuse_has_valid_weekly_positive_control(self):
         import datetime
         c = self.controller()

@@ -121,6 +121,48 @@ claim official score weights, emit marks, or establish a participant's six
 category results. All category statuses remain `UNVERIFIED`; formula and
 constraint oracle evidence is explicitly scoped to synthetic fixtures.
 
+### New competition activation blockers
+
+The container controller currently accepts only the two historical pilot keys
+in `matrices.json`, and `probe.py` contains adapters only for those projects.
+`test_new_competition_repositories_fail_closed_without_runner_profiles` locks
+this down: Mazhai Cover, PricingPulse, Veera Footwear, and Janus are rejected by
+the container protocol until a reviewed profile and adapter are added. Read-only
+inspection of their authorized GitHub repositories found all four `main`
+branches empty. There is no existing participant entry point to call.
+
+Do not turn the fixture generator or helpers in `challenge_checks.py` into an
+official profile. Their outputs use synthetic inputs and are not evidence about
+a pull request. An evaluator that accepts participant-supplied output values
+would also be forgeable. A real integration needs an agreed repository-level
+entry point and a trusted adapter that executes the exact PR head inside the
+existing bounded child, passes organizer-owned inputs, and independently
+checks the returned values.
+
+Before a profile can be approved, the team must produce and version its exact
+input data, expected outputs or acceptance criteria, thresholds, and an
+organizer approval record. Current source limitations are:
+
+- **PricingPulse:** published arithmetic can be checked against explicit
+  scenario inputs, but the hidden demand/elasticity scenarios, convention,
+  allowed discount limit, and official scoring weights are not set. Arithmetic
+  helpers alone do not evaluate recommendations or demand quality.
+- **Veera Footwear:** canonical creator prices and labels, platform catalog,
+  buyer simulator, hidden scenarios, normalization, and the challenge's missing
+  40 points are not defined in the repository documents. Existing synthetic
+  catalogs are test fixtures only.
+- **Mazhai Cover:** the formula primitives are known, but official hidden
+  seasonal data, test labels, calibrated thresholds, and mark conversion are
+  missing. Proposed thresholds are not frozen criteria.
+- **Janus:** the brief assigns its six criteria to human judging; it supplies
+  no executable test oracle. The container must leave all categories
+  `UNVERIFIED` pending judge review.
+
+Until those inputs and the code interface are approved, no new-repository
+container execution or category PASS/FAIL should be emitted. The separate
+six-category dashboard state is `UNVERIFIED`, and judges enter final marks
+explicitly.
+
 Run the deterministic checker tests with:
 
 ```sh
