@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 
 test("authenticated participant sees live options, deadlines, and released results only", async ({ page }) => {
 	let resultsUnavailable = true;
+	let selectedTrack: { repositoryId: number; fullName: string } | null = null;
+	let savedRepositoryId: number | null = null;
 	await page.route("**/api/organization/status", (route) =>
 		route.fulfill({
 			contentType: "application/json",
@@ -18,6 +20,12 @@ test("authenticated participant sees live options, deadlines, and released resul
 		}));
 	await page.route("**/api/organization/participant**", (route) => {
 		const path = new URL(route.request().url()).pathname;
+		if (path.endsWith("/track") && route.request().method() === "POST") {
+			const body = route.request().postDataJSON() as { repositoryId: number };
+			savedRepositoryId = body.repositoryId;
+			selectedTrack = repositories.find(repo => repo.repositoryId === body.repositoryId) ?? null;
+			return route.fulfill({ json: { track: selectedTrack } });
+		}
 		if (path.endsWith("/results")) {
 			if (!resultsUnavailable) {
 				return route.fulfill({
@@ -41,10 +49,7 @@ test("authenticated participant sees live options, deadlines, and released resul
 		if (path.endsWith("/track-options")) {
 			return route.fulfill({
 				json: {
-					repositories: [{
-						repositoryId: 10,
-						fullName: "180DC-VIT-CHENNAI/mazhai-cover",
-					}],
+					repositories,
 				},
 			});
 		}
@@ -62,7 +67,7 @@ test("authenticated participant sees live options, deadlines, and released resul
 		return route.fulfill({
 			json: {
 				team: { id: "team-a", name: "Team A", status: "ACTIVE" },
-				track: null,
+				track: selectedTrack,
 				githubLinked: false,
 				currentMember: { displayName: "Participant A", email: "a@example.com", githubLogin: null, githubLinked: false },
 				members: [{ displayName: "Participant A", email: "a@example.com", githubLogin: null, githubLinked: false }],
@@ -76,9 +81,19 @@ test("authenticated participant sees live options, deadlines, and released resul
 	await page.getByRole("link", { name: "My submission" }).click();
 
 	await expect(page.getByRole("heading", { name: "My submission" })).toBeVisible();
-	await expect(page.getByRole("option", {
-		name: "180DC-VIT-CHENNAI/mazhai-cover",
-	})).toBeAttached();
+	for (const name of ["Mazhai Cover", "PricingPulse", "Veera Footwear", "JANUS"]) {
+		await expect(page.getByRole("button", { name: new RegExp(name) })).toBeVisible();
+		await expect(page.getByRole("link", { name: `${name} GitHub repository` })).toHaveAttribute("href", /^https:\/\/github\.com\/180DC-VIT-CHENNAI\//);
+	}
+	const confirmRepository = page.getByRole("button", { name: "Confirm repository" });
+	await expect(confirmRepository).toBeDisabled();
+	await page.getByRole("button", { name: /PricingPulse/ }).focus();
+	await page.keyboard.press("Enter");
+	await expect(page.getByRole("button", { name: /PricingPulse/ })).toHaveAttribute("aria-pressed", "true");
+	await expect(confirmRepository).toBeEnabled();
+	await confirmRepository.click();
+	await expect.poll(() => savedRepositoryId).toBe(11);
+	await expect(page.getByRole("button", { name: /PricingPulse/ })).toContainText("Current");
 	await expect(page.getByText("12/1/2026", { exact: false })).toBeVisible();
 	await expect(page.getByRole("link", { name: /mazhai-cover #42/ })).toHaveAttribute("href", "https://github.com/180DC-VIT-CHENNAI/mazhai-cover/pull/42");
 	await expect(page.getByRole("heading", { name: "Team members" })).toHaveCount(0);
@@ -100,3 +115,10 @@ test("authenticated participant sees live options, deadlines, and released resul
 	await expect(page.getByText("88", { exact: true })).toBeVisible();
 	await expect(page.getByText("Judge A", { exact: true })).toHaveCount(0);
 });
+
+const repositories = [
+	{ repositoryId: 10, fullName: "180DC-VIT-CHENNAI/mazhai-cover" },
+	{ repositoryId: 11, fullName: "180DC-VIT-CHENNAI/pricingpulse" },
+	{ repositoryId: 12, fullName: "180DC-VIT-CHENNAI/veera-footwear" },
+	{ repositoryId: 13, fullName: "180DC-VIT-CHENNAI/janus" },
+];

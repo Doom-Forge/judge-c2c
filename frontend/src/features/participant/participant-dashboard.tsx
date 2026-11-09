@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import { AlertCircle, ArrowUpRight, Clock3, FileText, GitPullRequest, UploadCloud, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,12 @@ type ParticipantPayload = {
   evaluations: Array<{ id: string; state: string; created_at: string }>;
 };
 type TrackOption = { repositoryId: number; fullName: string };
+const challengeTracks = [
+  { fullName: "180DC-VIT-CHENNAI/mazhai-cover", name: "Mazhai Cover", brief: "Micro-insurance pricing" },
+  { fullName: "180DC-VIT-CHENNAI/pricingpulse", name: "PricingPulse", brief: "Dynamic pricing simulator" },
+  { fullName: "180DC-VIT-CHENNAI/veera-footwear", name: "Veera Footwear", brief: "Borrowed-audience campaign" },
+  { fullName: "180DC-VIT-CHENNAI/janus", name: "JANUS", brief: "Geospatial intelligence" },
+] as const;
 type Announcement = { id: string; title: string; body: string; createdAt: string };
 type ReleasedFeedbackItem = { problemUnderstanding?: string; remediation?: string; innovationImpact?: string; overall?: string; criteriaScores?: Array<{ criterionId: string; comment: string }> };
 type ReleasedFeedback = { analysis?: ReleasedFeedbackItem[]; engineering?: ReleasedFeedbackItem[] };
@@ -74,6 +80,7 @@ export function ParticipantDashboard({ view = "overview" }: { readonly view?: Pa
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [deadlines, setDeadlines] = useState<ParticipantDeadlines>(null);
   const [trackOptions, setTrackOptions] = useState<TrackOption[]>([]);
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [resultsUnavailable, setResultsUnavailable] = useState(false);
@@ -107,6 +114,7 @@ export function ParticipantDashboard({ view = "overview" }: { readonly view?: Pa
       ]);
       if (requestId !== loadRequestId.current) return;
       setData(consoleData);
+      setSelectedRepositoryId(consoleData.track?.repositoryId ?? null);
       setDocuments(documentData.documents);
       setDeadlines(documentData.deadlines);
       setTrackOptions(trackData.repositories);
@@ -153,15 +161,16 @@ export function ParticipantDashboard({ view = "overview" }: { readonly view?: Pa
     const file = event.dataTransfer.files[0];
     if (file) void upload(file);
   }
-  async function selectTrack(event: ChangeEvent<HTMLSelectElement>) {
-    const repositoryId = Number(event.currentTarget.value);
+  async function confirmTrackSelection() {
+    const repositoryId = selectedRepositoryId;
     if (!repositoryId || !data) return;
     setTrackBusy(true); setError("");
     try {
       await request("/track", { method: "POST", body: JSON.stringify({ repositoryId }) });
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Track selection failed.");
+      const message = cause instanceof Error ? cause.message : "Track selection failed.";
+      setError(message === "TRACK_LOCKED" ? "Repository changes are locked after engineering review starts." : message);
     } finally { setTrackBusy(false); }
   }
 
@@ -218,7 +227,24 @@ export function ParticipantDashboard({ view = "overview" }: { readonly view?: Pa
     <div className="grid gap-4 lg:grid-cols-3">
       <Card><CardHeader><div><CardTitle>Assigned track</CardTitle><CardDescription>Repository linked to this team</CardDescription></div><GitPullRequest className="text-[var(--accent)]" /></CardHeader><CardContent>
         {data.track ? <a className="font-medium text-[var(--info)]" href={`https://github.com/${data.track.fullName}`} target="_blank" rel="noreferrer">{data.track.fullName}<ArrowUpRight className="ml-1 inline size-4" /></a> : <p className="text-sm text-[var(--muted)]">No repository selected yet.</p>}
-        <label className="mt-4 block text-sm">Competition repository<select aria-label="Competition repository" className="mt-2 block w-full rounded-md border border-[var(--border)] bg-[var(--background)] p-2" value={data.track?.repositoryId ?? ""} disabled={trackBusy} onChange={event => void selectTrack(event)}><option value="" disabled>Select a repository</option>{trackOptions.map(repo => <option key={repo.repositoryId} value={repo.repositoryId}>{repo.fullName}</option>)}</select></label>
+        <fieldset className="mt-5 min-w-0" disabled={trackBusy}>
+          <legend className="mb-3 text-sm font-semibold">Choose your challenge repository</legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {challengeTracks.map(challenge => {
+              const repo = trackOptions.find(option => option.fullName.toLowerCase() === challenge.fullName.toLowerCase());
+              const selected = repo !== undefined && selectedRepositoryId === repo.repositoryId;
+              const current = repo !== undefined && data.track?.repositoryId === repo.repositoryId;
+              return <div key={challenge.fullName} className={`min-w-0 rounded-lg border p-3 ${selected ? "border-[var(--accent)] bg-[var(--raised)]" : "border-[var(--border)]"}`}>
+                <button type="button" aria-pressed={selected} disabled={!repo} onClick={() => repo && setSelectedRepositoryId(repo.repositoryId)} className="flex min-h-11 w-full items-start justify-between gap-3 text-left disabled:cursor-not-allowed disabled:opacity-60">
+                  <span className="min-w-0"><span className="block font-semibold">{challenge.name}</span><span className="mt-1 block text-xs text-[var(--muted)]">{challenge.brief}</span></span>
+                  <span className="shrink-0 text-xs text-[var(--muted)]">{!repo ? "Unavailable" : current ? "Current" : selected ? "Selected" : "Select"}</span>
+                </button>
+                {repo ? <a className="mt-2 inline-flex min-h-11 max-w-full items-center break-all text-xs text-[var(--info)] underline-offset-2 hover:underline" href={`https://github.com/${repo.fullName}`} target="_blank" rel="noreferrer" aria-label={`${challenge.name} GitHub repository`}>{repo.fullName}<ArrowUpRight className="ml-1 size-3 shrink-0" /></a> : <p className="mt-2 text-xs text-[var(--muted)]">This challenge repository is not currently available.</p>}
+              </div>;
+            })}
+          </div>
+          <Button className="mt-4 w-full sm:w-auto" disabled={trackBusy || selectedRepositoryId === null || selectedRepositoryId === data.track?.repositoryId || !trackOptions.some(option => option.repositoryId === selectedRepositoryId)} onClick={() => void confirmTrackSelection()}>{trackBusy ? "Saving selection…" : data.track ? "Confirm repository change" : "Confirm repository"}</Button>
+        </fieldset>
       </CardContent></Card>
       <Card><CardHeader><div><CardTitle>Requirements</CardTitle><CardDescription>Round 2 submission checklist</CardDescription></div><FileText className="text-[var(--accent)]" /></CardHeader><CardContent><ul className="space-y-3 text-sm"><li>Analysis document: PDF or DOCX, up to 2 MB</li><li>Engineering work submitted through pull requests</li><li>Keep your analysis findings, fixes, and proposed features clear</li></ul></CardContent></Card>
       <Card><CardHeader><div><CardTitle>Deadlines</CardTitle><CardDescription>Competition schedule</CardDescription></div><Clock3 className="text-[var(--accent)]" /></CardHeader><CardContent>{deadlines && (deadlines.analysisDocumentDeadline || deadlines.pullRequestDeadline) ? <dl className="space-y-3 text-sm">{deadlines.analysisDocumentDeadline && <div><dt className="text-[var(--muted)]">Analysis document</dt><dd>{prettyDate(deadlines.analysisDocumentDeadline)}</dd></div>}{deadlines.pullRequestDeadline && <div><dt className="text-[var(--muted)]">Pull request</dt><dd>{prettyDate(deadlines.pullRequestDeadline)}</dd></div>}</dl> : <p className="text-sm text-[var(--muted)]">No deadlines have been set.</p>}</CardContent></Card>
