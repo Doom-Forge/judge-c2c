@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { MailIdempotency, fetch as sendMail } from "../src/spacemail-sender";
 import { setSocketFactory } from "./fixtures/cloudflare-sockets";
 
@@ -53,7 +53,7 @@ function request(idempotencyKey: string, payload = { to: "person@example.com", s
 		body: JSON.stringify({ idempotencyKey, ...payload }),
 	});
 }
-afterEach(() => setSocketFactory(undefined));
+afterEach(() => { setSocketFactory(undefined); vi.restoreAllMocks(); });
 
 it("sends privately through implicit TLS and returns a stable duplicate result", async () => {
 	const fixture = senderEnv(smtpReplies);
@@ -98,4 +98,52 @@ it("does not automatically retry an uncertain SMTP delivery", async () => {
 	expect(retry.status).toBe(409);
 	expect(await retry.json()).toEqual({ error: "DELIVERY_STATE_UNKNOWN" });
 	expect(fixture.sends).toBe(1);
+});
+
+it("logs only the SMTP failure stage and numeric response, then blocks permanent auth retries", async () => {
+	const fixture = senderEnv([
+		"220 mail ready",
+		"250-mail ready", "250 AUTH LOGIN",
+		"334 username", "334 password", "535 authentication rejected",
+	]);
+	const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+	const response = await sendMail(request("private-key-otp-123", {
+		to: "person@example.com",
+		subject: "Your login code",
+		body: "The private one-time code is 908172.",
+	}), fixture.env);
+	expect(response.status).toBe(409);
+	expect(await response.json()).toEqual({ error: "SMTP_DELIVERY_FAILED_PERMANENT" });
+	expect(log).toHaveBeenCalledTimes(1);
+	const line = String(log.mock.calls[0]?.[0]);
+	expect(JSON.parse(line)).toEqual({ event: "spacemail.smtp.failure", stage: "auth_password", smtpCode: 535 });
+	for (const secret of ["test-secret-password", "person@example.com", "908172", "private-key-otp-123"]) {
+		expect(line).not.toContain(secret);
+	}
+	const retry = await sendMail(request("private-key-otp-123", {
+		to: "person@example.com",
+		subject: "Your login code",
+		body: "The private one-time code is 908172.",
+	}), fixture.env);
+	expect(retry.status).toBe(409);
+	expect(fixture.sends).toBe(1);
+});
+
+it("sanitizes Durable Object failures without logging request or exception data", async () => {
+	const fixture = senderEnv(smtpReplies);
+	const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+	const env = {
+		SPACEMAIL_SMTP_PASSWORD: "test-secret-password",
+		MAIL_IDEMPOTENCY: {
+			idFromName: () => ({}),
+			get: () => ({ fetch: async () => { throw new Error("sensitive request data"); } }),
+		},
+	} as never;
+	const response = await sendMail(request("private-idempotency-key"), env);
+	expect(response.status).toBe(503);
+	const line = String(log.mock.calls[0]?.[0]);
+	expect(JSON.parse(line)).toEqual({ event: "spacemail.smtp.failure", stage: "idempotency_claim" });
+	expect(line).not.toContain("sensitive request data");
+	expect(line).not.toContain("private-idempotency-key");
+	expect(fixture.sends).toBe(0);
 });

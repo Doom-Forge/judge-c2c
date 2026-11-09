@@ -17,10 +17,18 @@ interface Env {
 
 type StoredDelivery = {
 	requestHash: string;
-	state: "SENDING" | "SENT" | "FAILED_RETRYABLE" | "UNKNOWN";
+	state: "SENDING" | "SENT" | "FAILED_RETRYABLE" | "FAILED_PERMANENT" | "UNKNOWN";
 	token: string;
 	updatedAt: number;
 };
+type FailureStage = "connect" | "greeting" | "ehlo" | "auth_login" | "auth_username" | "auth_password" | "mail_from" | "rcpt_to" | "data_command" | "data_write" | "data_reply" | "quit" | "idempotency_claim" | "idempotency_finish";
+function reportFailure(stage: FailureStage, smtpCode?: number) {
+	console.error(JSON.stringify({
+		event: "spacemail.smtp.failure",
+		stage,
+		...(Number.isInteger(smtpCode) && smtpCode! >= 100 && smtpCode! <= 599 ? { smtpCode } : {}),
+	}));
+}
 
 const json = (data: unknown, status = 200) => Response.json(data, {
 	status,
@@ -54,6 +62,7 @@ export class MailIdempotency extends DurableObject<Env> {
 				const current = await this.ctx.storage.get<StoredDelivery>("delivery");
 				if (current && current.requestHash !== requestHash) return json({ error: "IDEMPOTENCY_CONFLICT" }, 409);
 				if (current?.state === "SENT") return json({ state: "SENT" });
+				if (current?.state === "FAILED_PERMANENT") return json({ error: "DELIVERY_FAILED_PERMANENT" }, 409);
 				if (current?.state === "UNKNOWN") return json({ error: "DELIVERY_STATE_UNKNOWN" }, 409);
 				if (current?.state === "SENDING") {
 					const state = Date.now() - current.updatedAt > IN_FLIGHT_TTL_MS ? "UNKNOWN" : "SENDING";
@@ -70,7 +79,7 @@ export class MailIdempotency extends DurableObject<Env> {
 			});
 		}
 		if (url.pathname === "/finish") {
-			if (!/^[a-f0-9]{64}$/.test(String(input.requestHash ?? "")) || typeof input.token !== "string" || !["SENT", "FAILED_RETRYABLE", "UNKNOWN"].includes(String(input.state))) return json({ error: "INVALID_REQUEST" }, 400);
+			if (!/^[a-f0-9]{64}$/.test(String(input.requestHash ?? "")) || typeof input.token !== "string" || !["SENT", "FAILED_RETRYABLE", "FAILED_PERMANENT", "UNKNOWN"].includes(String(input.state))) return json({ error: "INVALID_REQUEST" }, 400);
 			return this.ctx.blockConcurrencyWhile(async () => {
 				const current = await this.ctx.storage.get<StoredDelivery>("delivery");
 				if (!current || current.requestHash !== input.requestHash || current.token !== input.token || current.state !== "SENDING") return json({ error: "DELIVERY_CLAIM_LOST" }, 409);
@@ -83,7 +92,7 @@ export class MailIdempotency extends DurableObject<Env> {
 }
 
 class SmtpError extends Error {
-	constructor(readonly retryable: boolean) { super("SMTP delivery failed"); }
+	constructor(readonly retryable: boolean, readonly stage: FailureStage, readonly smtpCode?: number) { super("SMTP delivery failed"); }
 }
 function timeout<T>(operation: Promise<T>, milliseconds: number, label: string): Promise<T> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -101,12 +110,13 @@ function base64(value: string) {
 
 async function sendSmtp(env: Env, to: string, subject: string, body: string) {
 	const password = env.SPACEMAIL_SMTP_PASSWORD;
-	if (!password || password.length > 1024) throw new SmtpError(true);
+	if (!password || password.length > 1024) throw new SmtpError(false, "auth_password");
 	let socket: ReturnType<typeof connect> | undefined;
 	let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 	let writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
 	let buffered = "";
 	let bodyMayHaveBeenAccepted = false;
+	let stage: FailureStage = "connect";
 	const decoder = new TextDecoder();
 	const encoder = new TextEncoder();
 	const deadline = Date.now() + DELIVERY_TIMEOUT_MS;
@@ -140,19 +150,22 @@ async function sendSmtp(env: Env, to: string, subject: string, body: string) {
 				if (match[2] === " ") return replyCode;
 			}
 		};
-		const command = async (value: string, accepted: number[]) => {
+		const command = async (commandStage: FailureStage, value: string, accepted: number[]) => {
+			stage = commandStage;
 			await timeout(writer!.write(encoder.encode(value + "\r\n")), remaining(), "SMTP timeout");
 			const code = await readReply();
-			if (!accepted.includes(code)) throw new Error("SMTP command rejected");
+			if (!accepted.includes(code)) throw new SmtpError(code >= 400 && code < 500, commandStage, code);
 		};
-		if (await readReply() !== 220) throw new Error("SMTP greeting rejected");
-		await command("EHLO doombot.180dcvitc.org", [250]);
-		await command("AUTH LOGIN", [334]);
-		await command(base64(SENDER), [334]);
-		await command(base64(password), [235]);
-		await command(`MAIL FROM:<${SENDER}>`, [250]);
-		await command(`RCPT TO:<${to}>`, [250, 251]);
-		await command("DATA", [354]);
+		stage = "greeting";
+		const greeting = await readReply();
+		if (greeting !== 220) throw new SmtpError(greeting >= 400 && greeting < 500, "greeting", greeting);
+		await command("ehlo", "EHLO doombot.180dcvitc.org", [250]);
+		await command("auth_login", "AUTH LOGIN", [334]);
+		await command("auth_username", base64(SENDER), [334]);
+		await command("auth_password", base64(password), [235]);
+		await command("mail_from", `MAIL FROM:<${SENDER}>`, [250]);
+		await command("rcpt_to", `RCPT TO:<${to}>`, [250, 251]);
+		await command("data_command", "DATA", [354]);
 		const safeBody = body.replace(/^\./gm, "..");
 		const encodedSubject = /^[\x20-\x7e]+$/.test(subject)
 			? subject
@@ -169,16 +182,22 @@ async function sendSmtp(env: Env, to: string, subject: string, body: string) {
 			".",
 		].join("\r\n");
 		bodyMayHaveBeenAccepted = true;
+		stage = "data_write";
 		await timeout(writer.write(encoder.encode(message + "\r\n")), remaining(), "SMTP timeout");
+		stage = "data_reply";
 		const accepted = await readReply();
 		if (accepted !== 250) {
 			bodyMayHaveBeenAccepted = false;
-			throw new Error("SMTP message rejected");
+			throw new SmtpError(accepted >= 400 && accepted < 500, "data_reply", accepted);
 		}
 		bodyMayHaveBeenAccepted = false;
-		try { await command("QUIT", [221]); } catch { /* The server already accepted the message. */ }
-	} catch {
-		throw new SmtpError(!bodyMayHaveBeenAccepted);
+		try { await command("quit", "QUIT", [221]); } catch { /* The server already accepted the message. */ }
+	} catch (error) {
+		const failure = error instanceof SmtpError
+			? error
+			: new SmtpError(!bodyMayHaveBeenAccepted, stage);
+		reportFailure(failure.stage, failure.smtpCode);
+		throw failure;
 	} finally {
 		try { await reader?.cancel(); } catch { /* Close is best effort. */ }
 		try { await writer?.close(); } catch { /* Close is best effort. */ }
@@ -222,9 +241,15 @@ export async function fetch(request: Request, env: Env) {
 	const id = env.MAIL_IDEMPOTENCY.idFromName(await hash(key));
 	const stub = env.MAIL_IDEMPOTENCY.get(id);
 	const token = crypto.randomUUID();
-	const claim = await stub.fetch("https://mail-idempotency.internal/claim", {
-		method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestHash, token }),
-	});
+	let claim: Response;
+	try {
+		claim = await stub.fetch("https://mail-idempotency.internal/claim", {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestHash, token }),
+		});
+	} catch {
+		reportFailure("idempotency_claim");
+		return json({ error: "IDEMPOTENCY_UNAVAILABLE" }, 503);
+	}
 	if (claim.status === 409) return json(await claim.json(), 409);
 	if (!claim.ok) return json({ error: "IDEMPOTENCY_UNAVAILABLE" }, 503);
 	const claimed = await claim.json() as { state?: string };
@@ -234,14 +259,25 @@ export async function fetch(request: Request, env: Env) {
 	try {
 		await sendSmtp(env, to, subject, message);
 	} catch (error) {
-		state = error instanceof SmtpError && error.retryable ? "FAILED_RETRYABLE" : "UNKNOWN";
+		state = error instanceof SmtpError
+			? error.retryable ? "FAILED_RETRYABLE" : error.smtpCode ? "FAILED_PERMANENT" : "UNKNOWN"
+			: "UNKNOWN";
 	}
-	const finish = await stub.fetch("https://mail-idempotency.internal/finish", {
-		method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestHash, token, state }),
-	});
-	if (!finish.ok) return json({ error: "IDEMPOTENCY_UNAVAILABLE" }, 503);
+	let finish: Response;
+	try {
+		finish = await stub.fetch("https://mail-idempotency.internal/finish", {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestHash, token, state }),
+		});
+	} catch {
+		reportFailure("idempotency_finish");
+		return json({ error: "IDEMPOTENCY_UNAVAILABLE" }, 503);
+	}
+	if (!finish.ok) {
+		reportFailure("idempotency_finish");
+		return json({ error: "IDEMPOTENCY_UNAVAILABLE" }, 503);
+	}
 	if (state === "SENT") return json({ accepted: true, duplicate: false });
-	return json({ error: state === "UNKNOWN" ? "DELIVERY_STATE_UNKNOWN" : "SMTP_DELIVERY_FAILED" }, state === "UNKNOWN" ? 409 : 502);
+	return json({ error: state === "UNKNOWN" ? "DELIVERY_STATE_UNKNOWN" : state === "FAILED_PERMANENT" ? "SMTP_DELIVERY_FAILED_PERMANENT" : "SMTP_DELIVERY_FAILED" }, state === "UNKNOWN" || state === "FAILED_PERMANENT" ? 409 : 502);
 }
 
 export default { fetch };
