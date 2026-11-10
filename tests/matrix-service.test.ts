@@ -79,7 +79,7 @@ beforeAll(async () => {
 	) {
 		await db
 			.prepare("INSERT INTO github_repositories VALUES(?,?,?,?,1)")
-			.bind(1442222462 + index, `180DC-VIT-CHENNAI/${name}`, 0, "main")
+			.bind(1442222462 + index, `Doom-Forge/${name}`, 0, "main")
 			.run();
 	}
 	await db.prepare("CREATE TABLE teams(id TEXT PRIMARY KEY,status TEXT,hackathon_id TEXT DEFAULT 'initial',track_finalized INTEGER DEFAULT 0)")
@@ -182,7 +182,7 @@ it("durably accepts the four new repos without dispatching any matrix run", asyn
 		"janus",
 	];
 	for (const [index, name] of expected.entries()) {
-		const fullName = `180DC-VIT-CHENNAI/${name}`;
+		const fullName = `Doom-Forge/${name}`;
 		expect(
 			overview.repositories.find(
 				(repository) => repository.full_name === fullName,

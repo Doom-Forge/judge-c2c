@@ -131,7 +131,7 @@ beforeEach(async () => {
 			.prepare(
 				"INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(?,? ,0,'main')",
 			)
-			.bind(index + 10, "180DC-VIT-CHENNAI/" + name)
+			.bind(index + 10, (name === "noyyal-treasury" ? "180DC-VIT-CHENNAI/" : "Doom-Forge/") + name)
 			.run();
 	}
 	await db
