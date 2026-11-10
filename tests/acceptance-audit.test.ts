@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, it, expect } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './miniflare';
 import { migrate } from './database';
 import { demoContract } from '../src/demo';
 import { createTeam } from '../src/competition-teams';

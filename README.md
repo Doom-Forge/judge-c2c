@@ -1,5 +1,10 @@
 # Judge-C2C
 
+The current Doomforge pilot uses deterministic Cloudflare Containers and numerical
+matrix scores, with no AI judging or GitHub Actions. See [DOOMFORGE.md](DOOMFORGE.md)
+and [the container runbook](docs/container-matrix.md) for the current deployment.
+The original platform documentation below retains historical architecture context.
+
 GitHub engineering evaluation with immutable contracts, baseline comparison and
 evidence-backed human review. AI interprets evidence; it does not establish facts.
 

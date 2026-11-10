@@ -1,4 +1,17 @@
 export interface Env {
+  MATRIX_START_LIMIT?: string;
+  CORS_ALLOWED_ORIGINS?: string;
+  DEFAULT_PR_REVIEWER?: string;
+  MATRIX_MODE?: string;
+  MATRIX_IMAGE_URI?: string;
+	MATRIX_DIAGNOSTIC_IMAGE_URI?: string;
+  MATRIX_EVALUATOR?: Workflow<{ runId: string }>;
+  NOYYAL_MATRIX?: DurableObjectNamespace;
+  RASOI_MATRIX?: DurableObjectNamespace;
+  MAZHAI_COVER_MATRIX?: DurableObjectNamespace;
+  PRICINGPULSE_MATRIX?: DurableObjectNamespace;
+  VEERA_FOOTWEAR_MATRIX?: DurableObjectNamespace;
+  JANUS_MATRIX?: DurableObjectNamespace;
   // Internal shared coordination database; not a participant-accessible binding.
   CAPACITY_DB?: D1Database;
   RUNNER_BACKEND?: 'actions-vm';
@@ -17,8 +30,14 @@ export interface Env {
   RUNNER_IMAGE_URI?: string;
   ORG_DB?: D1Database;
   ORG_SERVICE?: Fetcher;
+  ARENA_SERVICE?: Fetcher;
+  TEAM_EMAIL_SENDER?: Fetcher;
   ORG_EVALUATOR?: Workflow<{ runId: string }>;
   ORG_NAME?: string;
+  ORG_VAULT_AAD?: string;
+  ORG_KEY_CONTEXT?: string;
+  USE_DOOMFORGE_ORG?: string;
+  USE_180DC_ORG?: string;
   ORG_PUBLIC_ORIGIN?: string;
   ORG_REVIEW_ORIGINS?: string;
   ORG_ADMIN_TOKEN?: string;

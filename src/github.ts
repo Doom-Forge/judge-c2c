@@ -36,7 +36,15 @@ export class GitHub {
       .sign(key);
     return new GitHub(jwt, env.DB, env.CAPACITY_DB ?? env.DB);
   }
-  static async installation(env: Env, contract: Contract) {
+  static async installation(
+    env: Env,
+    contract: Contract,
+    options: {
+      issuesWrite?: boolean;
+      checksWrite?: boolean;
+      pullRequestsWrite?: boolean;
+    } = {},
+  ) {
     await requireOrganizationActive(env);
     const client = await GitHub.application(env);
     await requireOrganizationActive(env);
@@ -48,9 +56,9 @@ export class GitHub {
           repository_ids: [contract.repository.id],
           permissions: {
             contents: 'read',
-            pull_requests: 'read',
-            issues: 'read',
-            checks: 'write',
+            pull_requests: options.pullRequestsWrite ? 'write' : 'read',
+            issues: options.issuesWrite ? 'write' : 'read',
+            ...(options.checksWrite === false ? {} : { checks: 'write' }),
           },
         }),
       },

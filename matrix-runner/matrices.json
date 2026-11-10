@@ -1,0 +1,96 @@
+{
+  "noyyal-treasury": {
+    "version": "pilot-v1",
+    "checks": [
+      {
+        "id": "noyyal.scale.dedupe-2000",
+        "category": "scalability",
+        "weight": 1,
+        "mandatory": false,
+        "description": "Content deduplication on 2,000 unique rows plus statement repeats within 12s and 512MiB"
+      },
+      {
+        "id": "noyyal.scale.dedupe-20000",
+        "category": "scalability",
+        "weight": 1,
+        "mandatory": false,
+        "description": "Content deduplication on 20,000 unique rows plus statement repeats within 12s and 512MiB"
+      },
+      {
+        "id": "noyyal.security.forecast-nan",
+        "category": "security",
+        "weight": 1,
+        "mandatory": true,
+        "description": "Accept a valid 13-week Monday forecast, then reject the same forecast with one missing financial quantile"
+      },
+      {
+        "id": "noyyal.security.forecast-duplicate-weeks",
+        "category": "security",
+        "weight": 1,
+        "mandatory": true,
+        "description": "Accept a valid 13-week Monday forecast, then reject the same forecast with one duplicated week date"
+      },
+      {
+        "id": "noyyal.usefulness.dedupe-content",
+        "category": "usefulness",
+        "weight": 1,
+        "mandatory": false,
+        "description": "Remove repeated statement contents despite distinct transaction IDs; retain distinct wages"
+      },
+      {
+        "id": "noyyal.usefulness.fx-conversion",
+        "category": "usefulness",
+        "weight": 1,
+        "mandatory": false,
+        "description": "Convert synthetic USD, EUR and INR amounts using the corresponding spot rate"
+      }
+    ]
+  },
+  "rasoi-offer-roulette": {
+    "version": "pilot-v1",
+    "checks": [
+      {
+        "id": "rasoi.scale.profit-2000",
+        "category": "scalability",
+        "weight": 1,
+        "mandatory": false,
+        "description": "Compute 2,000 first-order discounted incremental-profit values within 12s and 512MiB"
+      },
+      {
+        "id": "rasoi.scale.profit-20000",
+        "category": "scalability",
+        "weight": 1,
+        "mandatory": false,
+        "description": "Compute 20,000 first-order discounted incremental-profit values within 12s and 512MiB"
+      },
+      {
+        "id": "rasoi.security.opt-out",
+        "category": "security",
+        "weight": 1,
+        "mandatory": true,
+        "description": "No promotional offer may target customers who opted out"
+      },
+      {
+        "id": "rasoi.security.budget-cap",
+        "category": "security",
+        "weight": 1,
+        "mandatory": true,
+        "description": "Chosen offers must obey a zero spending cap under positive uplift"
+      },
+      {
+        "id": "rasoi.usefulness.discount-cost",
+        "category": "usefulness",
+        "weight": 1,
+        "mandatory": false,
+        "description": "Expected discount cost at zero, partial and certain order probability"
+      },
+      {
+        "id": "rasoi.usefulness.incremental-profit",
+        "category": "usefulness",
+        "weight": 1,
+        "mandatory": false,
+        "description": "First-order-only discount formula across nine deterministic synthetic cases"
+      }
+    ]
+  }
+}

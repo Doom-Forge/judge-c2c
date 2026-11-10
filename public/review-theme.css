@@ -1,0 +1,55 @@
+html[data-theme='dark'],
+html[data-theme='light'] {
+  --green: var(--accent);
+  --blue: var(--accent);
+}
+
+html[data-theme='light'] .sidebar-note,
+html[data-theme='light'] .brand-sub,
+html[data-theme='light'] .workspace-label {
+  color: var(--muted);
+}
+
+.dot {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.stats {
+  border-color: var(--line);
+  background: var(--line);
+}
+
+.stat {
+  background: var(--white);
+}
+
+.provenance,
+.evidence-list,
+.freshness,
+.ai-notice,
+.bounded-analysis,
+.ai-detail-item,
+.metric-item,
+.check-item,
+.approach-item,
+.security-facet,
+.contribution-item,
+.attention-card,
+.summary-item,
+.summary-assessment {
+  border-color: var(--line);
+  background: var(--df-raised);
+  color: var(--ink);
+}
+
+.dimension-section summary,
+.evidence-kind summary {
+  border-color: var(--line);
+  background: var(--df-raised);
+  color: var(--ink);
+}
+
+.dimension-section summary:hover {
+  background: color-mix(in srgb, var(--accent) 8%, var(--df-raised));
+}

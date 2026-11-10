@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './miniflare';
 import { migrate } from './database';
 import {
   canonical,

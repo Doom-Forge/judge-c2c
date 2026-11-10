@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './miniflare';
 import { buildSync } from 'esbuild';
 import { migrate } from './database';
 import { canonical, digest } from '../src/domain';

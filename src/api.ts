@@ -1,4 +1,5 @@
 import { organizationActive } from './organization-retirement';
+import { dashboardRepositories } from './dashboard-repositories';
 import { attentionItems } from './attention';
 import { retryableRun } from './retry-policy';
 import { assessExpectedArtifacts } from './expected-artifacts';
@@ -60,15 +61,25 @@ export async function api(request: Request, env: Env) {
         },
         runs: [demoRun],
       });
-    const [counts, runs] = await Promise.all([
+    const [counts, runs, repositoryCount] = await Promise.all([
       env.DB.prepare(
         `SELECT (SELECT count(*) FROM repositories) AS repositories,(SELECT count(*) FROM teams) AS teams,(SELECT count(*) FROM submissions WHERE closed=0) AS openSubmissions,(SELECT count(*) FROM evaluations WHERE state NOT IN ('COMPLETED','FAILED','SUPERSEDED')) AS active,(SELECT count(*) FROM evaluations WHERE state='COMPLETED') AS completed,(SELECT count(*) FROM evaluations WHERE state='FAILED') AS failed,(SELECT count(*) FROM evaluations e JOIN submissions s ON s.latest_run_id=e.id WHERE e.state='FAILED' OR (e.state='COMPLETED' AND (e.ai_status<>'COMPLETED' OR json_extract(coalesce(e.report,'{}'),'$.aiTrace.requiresHumanAttention')=1 OR coalesce(json_extract(coalesce(e.report,'{}'),'$.aiTrace.groundingPolicy'),'')<>'objective-facts-unverified-narratives-v1' OR e.evidence LIKE '%UNVERIFIED%'))) AS attention`,
       ).first(),
       env.DB.prepare(
         'SELECT e.*,r.full_name FROM evaluations e JOIN repositories r ON r.id=e.repository_id ORDER BY e.created_at DESC LIMIT 100',
       ).all(),
+      env.ORG_DB
+        ? dashboardRepositories(env).then((repositories) => repositories.length)
+        : Promise.resolve(null),
     ]);
-    return json({ demo: false, counts, runs: runs.results });
+    return json({
+      demo: false,
+      counts: {
+        ...counts,
+        ...(repositoryCount !== null ? { repositories: repositoryCount } : {}),
+      },
+      runs: runs.results,
+    });
   }
   if (request.method === 'GET' && path === '/api/repositories') {
     if (demo)
@@ -82,11 +93,7 @@ export async function api(request: Request, env: Env) {
         ],
       });
     return json({
-      repositories: (
-        await env.DB.prepare(
-          'SELECT r.*,c.document FROM repositories r JOIN contracts c ON c.hash=r.active_contract_hash',
-        ).all()
-      ).results,
+      repositories: await dashboardRepositories(env),
     });
   }
   const runMatch = path.match(/^\/api\/evaluations\/([\w-]{1,80})(\/bundle)?$/);

@@ -1,88 +1,18 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="light" />
-    <title>Judge-C2C · Engineering review</title>
-    <link rel="stylesheet" href="/style.css" />
-    <script src="/competition.js" defer></script>
-    <script src="/organization.js" defer></script>
-    <script src="/app.js" defer></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0B0D10" />
+    <meta
+      name="description"
+      content="DOOMFORGE engineering judging workspace"
+    />
+    <title>DOOMFORGE | Engineering arena</title>
+    <script type="module" crossorigin src="/assets/index-BF9A_1jF.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CiKW__2D.css">
   </head>
   <body>
-    <aside class="sidebar">
-      <a class="brand" href="/" aria-label="Judge-C2C home"
-        ><span class="mark">J<span>2</span></span
-        ><span
-          >Judge<span class="brand-sub">CODE TO CONTRIBUTION</span></span
-        ></a
-      >
-      <div class="workspace-label">JUDGING WORKSPACE</div>
-      <nav aria-label="Main navigation">
-        <button class="nav active" id="nav-overview">
-          <span>◫</span> Submissions</button
-        ><button class="nav" id="nav-attention"><span>⚠</span> Needs Attention</button
-        ><button class="nav" id="nav-repos"><span>▤</span> Repositories</button
-        ><button class="nav" id="nav-organization">
-          <span>⌘</span> GitHub organization
-        </button>
-      </nav>
-      <div class="sidebar-note">
-        <span class="dot"></span> Evidence before inference
-        <p>Every verdict has a trail.<br />Every uncertainty stays visible.</p>
-      </div>
-      <div class="sidebar-footer">Judge-C2C <span>v0.1</span></div>
-    </aside>
-    <div class="main-shell">
-      <header class="topbar">
-        <span id="breadcrumb"
-          >Workspace <span class="slash">/</span> Submissions</span
-        ><span class="environment" id="mode-label">Connecting</span
-        ><button id="signout" hidden>Lock workspace</button>
-      </header>
-      <div id="demo-banner" class="demo-banner" hidden>
-        REVIEW ENVIRONMENT
-        <span
-          >Illustrative submission. All displayed evidence is synthetic. Live
-          judging is disabled.</span
-        >
-      </div>
-      <main id="main">
-        <section class="page-head">
-          <div>
-            <div class="eyebrow">ENGINEERING EVALUATION</div>
-            <h1>Follow the evidence.</h1>
-            <p>From the assigned challenge to the exact contribution.</p>
-          </div>
-          <button id="refresh" class="button">↻ Refresh</button>
-        </section>
-        <div id="message" role="status"></div>
-        <section id="login" class="login" hidden>
-          <h2>Open the judging workspace</h2>
-          <p>
-            Enter the organizer credential. It stays in memory for this tab and
-            is cleared when you lock the workspace.
-          </p>
-          <form id="login-form">
-            <label for="token">Organizer credential</label
-            ><input
-              id="token"
-              type="password"
-              autocomplete="off"
-              minlength="32"
-              required
-            /><button class="button primary">Unlock workspace</button>
-          </form>
-        </section>
-        <div id="content" aria-live="polite">
-          <div class="loading">Loading evaluation workspace…</div>
-        </div>
-      </main>
-      <footer class="main-footer">
-        Expected state <span>→</span> Actual change <span>→</span> Objective
-        evidence <span>→</span> Contextual review
-      </footer>
-    </div>
+    <div id="root"></div>
   </body>
 </html>

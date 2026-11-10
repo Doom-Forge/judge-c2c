@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './miniflare';
 import { generateKeyPairSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { migrate } from './database';

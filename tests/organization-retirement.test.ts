@@ -7,7 +7,7 @@ import {
   expect,
   vi,
 } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './miniflare';
 import { generateKeyPairSync } from 'node:crypto';
 import { migrate } from './database';
 import {

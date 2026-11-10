@@ -1,17 +1,17 @@
-import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Miniflare } from './miniflare';
 import { migrate } from './database';
-import { createTeam, changeTeam, importTeams } from '../src/competition-teams';
+import { changeTeam, createTeam, importTeams } from '../src/competition-teams';
 import {
-  syncIssue,
-  publishChallenge,
   assignIssue,
-  revokeAssignment,
+  publishChallenge,
   reviewIssue,
+  revokeAssignment,
+  syncIssue,
 } from '../src/competition-issues';
 import {
-  eventSettings,
   type CompetitionServices,
+  eventSettings,
 } from '../src/competition-store';
 import {
   classifyIssue,
@@ -37,7 +37,7 @@ const native = vi.fn(async (path: string): Promise<unknown> => {
       type: 'User',
     };
   }
-  if (path.includes('/issues/'))
+  if (path.includes('/issues/')) {
     return {
       number: Number(path.split('/').at(-1)),
       title: 'Endpoint crashes when input is missing',
@@ -47,6 +47,7 @@ const native = vi.fn(async (path: string): Promise<unknown> => {
       labels: [],
       updated_at: '2026-10-02T00:00:00Z',
     };
+  }
   if (path.includes('/commits/')) return { sha: demoContract.baseline };
   throw new Error('Unexpected path ' + path);
 });
@@ -90,7 +91,10 @@ async function challenge(number = 12, extra = {}) {
     issueNumber: number,
     contract: {
       ...demoContract,
-      repository: { ...demoContract.repository, fullName: 'demo/challenge' },
+      repository: {
+        ...demoContract.repository,
+        fullName: 'demo/challenge',
+      },
       issueNumbers: [number],
     },
     ...extra,
@@ -107,7 +111,11 @@ describe('coherent competitive state', () => {
         createTeam(env, services, 'organizer', team(name!, login!)),
       ),
     );
-    await challenge(12, { ownership: 'SHARED', capacity: 2, claimable: true });
+    await challenge(12, {
+      ownership: 'SHARED',
+      capacity: 2,
+      claimable: true,
+    });
     await env
       .ORG_DB!.prepare('UPDATE hackathons SET policy=?')
       .bind(JSON.stringify({ claimingEnabled: true }))
@@ -261,7 +269,10 @@ describe('coherent competitive state', () => {
       issueNumber: 12,
       contract: {
         ...demoContract,
-        repository: { ...demoContract.repository, fullName: 'demo/challenge' },
+        repository: {
+          ...demoContract.repository,
+          fullName: 'demo/challenge',
+        },
         challengeVersion: 'v2',
       },
     });
@@ -399,7 +410,9 @@ describe('coherent submission lifecycle', () => {
       issueNumber: 12,
     });
     env.DB = env.ORG_DB!;
-    env.EVALUATOR = { create: async () => ({}) } as unknown as Env['EVALUATOR'];
+    env.EVALUATOR = {
+      create: async () => ({}),
+    } as unknown as Env['EVALUATOR'];
     return { a, assignment };
   }
   function links() {
@@ -529,7 +542,11 @@ describe('coherent submission lifecycle', () => {
     )
       .bind(
         JSON.stringify([
-          { id: 'dependency-fixture', status: 'FAIL', baselineStatus: 'PASS' },
+          {
+            id: 'dependency-fixture',
+            status: 'FAIL',
+            baselineStatus: 'PASS',
+          },
         ]),
         JSON.stringify({
           findings: [{ category: 'security', severity: 'high' }],
@@ -562,8 +579,11 @@ describe('coherent submission lifecycle', () => {
       )
       .run();
     expect(
-      ((await (await call('security=1')).json()) as { submissions: unknown[] })
-        .submissions,
+      (
+        (await (await call('security=1')).json()) as {
+          submissions: unknown[];
+        }
+      ).submissions,
     ).toHaveLength(0);
     await createTeam(env, services, 'organizer', team('Beta', 'bob'));
     expect(
@@ -689,10 +709,11 @@ describe('coherent submission lifecycle', () => {
     let entered: () => void = () => {};
     const pending = new Promise<void>((r) => (entered = r));
     native.mockImplementation(async (path) => {
-      if (path.includes('/pulls/'))
+      if (path.includes('/pulls/')) {
         return read++ === 0
           ? pr(47, 'b'.repeat(40), '2026-10-02T01:00:00Z', true)
           : pr(47, 'c'.repeat(40), '2026-10-02T02:00:00Z');
+      }
       if (path === '/graphql') {
         if (read === 1) {
           entered();
@@ -762,7 +783,10 @@ describe('coherent submission lifecycle', () => {
       { ...demoContract, issueNumbers: [12] },
       {
         assessments: demoContract.requirements.flatMap((r) =>
-          r.criteria.map((c) => ({ criterionId: c.id, status: 'PASS' })),
+          r.criteria.map((c) => ({
+            criterionId: c.id,
+            status: 'PASS',
+          })),
         ),
       },
       [],
@@ -892,8 +916,9 @@ describe('GitHub synchronization and competitive decisions', () => {
           path,
           body: typeof init?.body === 'string' ? init.body : undefined,
         });
-        if (path.endsWith('/issues/12/labels') && !init?.method)
+        if (path.endsWith('/issues/12/labels') && !init?.method) {
           return applied.map((name) => ({ name }));
+        }
         if (path.endsWith('/issues/12/labels')) {
           applied = [...applied, ...JSON.parse(String(init?.body)).labels];
           return applied.map((name) => ({ name }));
@@ -959,7 +984,9 @@ describe('GitHub synchronization and competitive decisions', () => {
       issueNumber: 12,
     });
     env.DB = env.ORG_DB!;
-    env.EVALUATOR = { create: async () => ({}) } as unknown as Env['EVALUATOR'];
+    env.EVALUATOR = {
+      create: async () => ({}),
+    } as unknown as Env['EVALUATOR'];
     const original = native.getMockImplementation()!;
     native.mockImplementation(async (path) =>
       path === '/graphql'
@@ -1156,7 +1183,7 @@ describe('organizer label overrides and clarification history', () => {
     const mutations: string[] = [];
     const client = {
       api: async (path: string, init?: RequestInit) => {
-        if (path === '/repos/demo/challenge/issues/12')
+        if (path === '/repos/demo/challenge/issues/12') {
           return {
             number: 12,
             title: 'Endpoint crashes',
@@ -1166,8 +1193,10 @@ describe('organizer label overrides and clarification history', () => {
             labels: labels.map((name) => ({ name })),
             updated_at: updated,
           };
-        if (path.endsWith('/issues/12/labels') && !init?.method)
+        }
+        if (path.endsWith('/issues/12/labels') && !init?.method) {
           return labels.map((name) => ({ name }));
+        }
         if (path.endsWith('/issues/12/labels') && init?.method === 'POST') {
           const incoming = JSON.parse(String(init.body)).labels;
           labels = [...new Set([...labels, ...incoming])];
@@ -1182,7 +1211,9 @@ describe('organizer label overrides and clarification history', () => {
           return {};
         }
         if (path.endsWith('/labels?per_page=100')) return [];
-        if (path.includes('/commits/')) return { sha: demoContract.baseline };
+        if (path.includes('/commits/')) {
+          return { sha: demoContract.baseline };
+        }
         if (init?.method === 'POST') {
           mutations.push(path);
           return {};
@@ -1199,8 +1230,9 @@ describe('organizer label overrides and clarification history', () => {
         )
         .all<{ id: string }>()
     ).results;
-    for (const action of actions)
+    for (const action of actions) {
       await synchronizeLabels(env, scoped, action.id);
+    }
     expect(labels).toContain('judge:priority:low');
     await publishChallenge(env, scoped, 'organizer:publisher', {
       repositoryId: 1,
@@ -1236,8 +1268,9 @@ describe('organizer label overrides and clarification history', () => {
         )
         .all<{ id: string }>()
     ).results;
-    for (const action of actions)
+    for (const action of actions) {
       await synchronizeLabels(env, scoped, action.id);
+    }
     expect(labels).toContain('judge:type:bug');
     expect(labels).toContain('judge:type:documentation');
     expect(labels).toContain('judge:priority:high');
@@ -1271,8 +1304,9 @@ describe('organizer label overrides and clarification history', () => {
         .all<{ id: string }>()
     ).results;
     const priorMutations = mutations.length;
-    for (const action of actions)
+    for (const action of actions) {
       await synchronizeLabels(env, scoped, action.id);
+    }
     expect(mutations.length).toBe(priorMutations);
     const ctx = {
       waitUntil() {},

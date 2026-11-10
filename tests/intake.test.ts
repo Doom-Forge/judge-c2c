@@ -1,6 +1,6 @@
 import { migrate } from './database';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './miniflare';
 import { readFileSync } from 'node:fs';
 import { URL as NodeURL } from 'node:url';
 import { webhook } from '../src/intake';

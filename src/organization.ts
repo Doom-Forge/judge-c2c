@@ -1,23 +1,32 @@
 import { providerConfigured, providerHasKey } from './external-review';
+import { acceptMatrixPR } from './matrix-service';
+import {
+  activeOrganization,
+  competitionOwner,
+  competitionRepositories,
+  hasOrganizationSelection,
+  organizationNames,
+  type SupportedOrganization,
+} from './organization-selection';
 import { selectReviewModel } from './review-routing';
 import {
+  requireOrganizationActive,
   retirementStatus,
   retireOrganization,
-  requireOrganizationActive,
 } from './organization-retirement';
 import { operationalAlerts } from './operational-alerts';
 import {
+  type ConsoleSession,
   credentialIdentity,
   identitySessionQuery,
   manageIdentities,
   participantConsole,
-  type ConsoleSession,
 } from './console-identities';
 import { readRunMeasurements } from './run-measurements';
 import { confidentialSecurity } from './confidential-security';
 import {
-  readOperationalMetrics,
   expireOperationalMetrics,
+  readOperationalMetrics,
 } from './operational-telemetry';
 import { createCandidate, reviewCandidate } from './additional-contributions';
 import { expireArtifacts } from './artifact-store';
@@ -26,21 +35,25 @@ import { appAccess } from './github-app-access';
 import { z } from 'zod';
 import { createPrivateKey } from 'node:crypto';
 import { GitHub } from './github';
-import { canonical, digest, sha, pathSchema } from './domain';
+import { canonical, digest, pathSchema, sha } from './domain';
 import { boundedBody, equalSecret, redact, verifyWebhook } from './security';
 import { api } from './api';
 import { aiReview, objective } from './evaluate';
 import { demoContract } from './demo';
 import { runnerDiagnostic } from './runner-diagnostic';
+import { diagnoseMatrixContainers, DiagnosticSourceError, readDiagnosticSources } from './matrix-container-diagnostic';
 import { webhook } from './intake';
 import { competition } from './competition';
+import { roundTwoReview } from './round-two-review';
 import {
-  receiveCompetitionEvent,
   maintainCompetition,
+  receiveCompetitionEvent,
 } from './competition-sync';
 import type { CompetitionServices } from './competition-store';
 import type { Env } from './env';
-import { paymentRetryPolicy, paymentRetryDescriptions } from './runner-policy';
+import { paymentRetryDescriptions, paymentRetryPolicy } from './runner-policy';
+import { requestParticipantLoginCode, verifyParticipant } from './team-invitations';
+import { roundTwoAnnouncements } from './round-two-announcements';
 
 export const permissions = {
   contents: 'read',
@@ -48,6 +61,10 @@ export const permissions = {
   issues: 'write',
   checks: 'write',
 } as const;
+const matrixPermissions = { ...permissions, pull_requests: 'write' } as const;
+function requestedPermissions(env: Env) {
+  return env.MATRIX_MODE === 'true' ? matrixPermissions : permissions;
+}
 const hex = z.string().regex(/^[a-f0-9]{64}$/);
 function random() {
   return Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
@@ -64,13 +81,18 @@ async function vaultKey(env: Env) {
     ['encrypt', 'decrypt'],
   );
 }
+function vaultAdditionalData(env: Env) {
+  return new TextEncoder().encode(
+    env.ORG_VAULT_AAD ?? `judge-c2c:${env.ORG_NAME ?? organizationNames.doomForge}`,
+  );
+}
 export async function seal(env: Env, value: unknown) {
   const iv = crypto.getRandomValues(new Uint8Array(12)),
     cipher = await crypto.subtle.encrypt(
       {
         name: 'AES-GCM',
         iv,
-        additionalData: new TextEncoder().encode('judge-c2c:' + env.ORG_NAME),
+        additionalData: vaultAdditionalData(env),
       },
       await vaultKey(env),
       new TextEncoder().encode(canonical(value)),
@@ -88,7 +110,7 @@ export async function unseal<T>(env: Env, value: string): Promise<T> {
         {
           name: 'AES-GCM',
           iv: new Uint8Array(box.iv),
-          additionalData: new TextEncoder().encode('judge-c2c:' + env.ORG_NAME),
+          additionalData: vaultAdditionalData(env),
         },
         await vaultKey(env),
         new Uint8Array(box.cipher),
@@ -108,18 +130,61 @@ interface Connection {
   slug: string;
   encrypted: string;
   installation_id: number | null;
+  suspended?: number;
 }
-async function connection(env: Env) {
+async function connection(
+  env: Env,
+  organization = activeOrganization(env),
+) {
+  if (hasOrganizationSelection(env)) {
+    return env
+      .ORG_DB!.prepare('SELECT * FROM github_connections WHERE organization=?')
+      .bind(organization)
+      .first<Connection & { organization: string }>();
+  }
   return env
     .ORG_DB!.prepare('SELECT * FROM github_connection WHERE id=1')
     .first<Connection>();
 }
-export async function organizationEnv(env: Env): Promise<Env> {
-  const row = await connection(env);
+async function webhookConnection(
+  env: Env,
+  body: Uint8Array,
+  signature: string | null,
+) {
+  if (hasOrganizationSelection(env)) {
+    const rows = await env.ORG_DB!
+      .prepare('SELECT * FROM github_connections ORDER BY organization')
+      .all<Connection & { organization: string }>();
+    for (const row of rows.results) {
+      const secret = await unseal<AppSecret>(env, row.encrypted);
+      if (
+        secret.id === row.app_id &&
+        secret.slug === row.slug &&
+        (await verifyWebhook(body, signature, secret.webhookSecret))
+      ) {
+        return { row, organization: row.organization };
+      }
+    }
+    return null;
+  }
+  const organization = activeOrganization(env);
+  const row = await connection(env, organization);
+  if (!row) return null;
+  const orgenv = await organizationEnvFor(env, organization);
+  return (await verifyWebhook(body, signature, orgenv.GITHUB_WEBHOOK_SECRET!))
+    ? { row, organization }
+    : null;
+}
+export async function organizationEnvFor(
+  env: Env,
+  organization = activeOrganization(env),
+): Promise<Env> {
+  const row = await connection(env, organization);
   if (!row) throw new Error('APP_NOT_CONNECTED');
   const secret = await unseal<AppSecret>(env, row.encrypted);
-  if (secret.id !== row.app_id || secret.slug !== row.slug)
+  if (secret.id !== row.app_id || secret.slug !== row.slug) {
     throw new Error('APP_CREDENTIAL_INTEGRITY');
+  }
   return {
     ...env,
     DB: env.ORG_DB!,
@@ -136,18 +201,29 @@ export async function organizationEnv(env: Env): Promise<Env> {
     EVALUATION_DETAILS_KIND: 'organization',
   };
 }
-async function appClient(env: Env) {
-  return GitHub.application(await organizationEnv(env));
+export async function organizationEnv(env: Env): Promise<Env> {
+  return organizationEnvFor(env, activeOrganization(env));
 }
-async function installedClient(env: Env, repositoryId?: number, write = false) {
+async function appClient(
+  env: Env,
+  organization = activeOrganization(env),
+) {
+  return GitHub.application(await organizationEnvFor(env, organization));
+}
+export async function installedClient(
+  env: Env,
+  repositoryId?: number,
+  write = false,
+  organization = activeOrganization(env),
+) {
   await requireOrganizationActive({
     ...env,
     DB: env.ORG_DB!,
     EVALUATION_DETAILS_KIND: 'organization',
   });
-  const row = await connection(env);
+  const row = await connection(env, organization);
   if (!row?.installation_id) throw new Error('APP_NOT_INSTALLED');
-  const app = await appClient(env);
+  const app = await appClient(env, organization);
   await requireOrganizationActive({
     ...env,
     DB: env.ORG_DB!,
@@ -174,7 +250,8 @@ function competitionServices(env: Env): CompetitionServices {
     client: (repositoryId, write) => installedClient(env, repositoryId, write),
     evaluationEnv: () => organizationEnv(env),
     installationId: async () => {
-      const row = await connection(env);
+      const organization = activeOrganization(env);
+      const row = await connection(env, organization);
       if (!row?.installation_id) throw new Error('APP_NOT_INSTALLED');
       return row.installation_id;
     },
@@ -184,16 +261,23 @@ function competitionServices(env: Env): CompetitionServices {
       return row.slug;
     },
     capabilities: async () => {
-      if ((await retirementStatus(env.ORG_DB!)).state !== 'ACTIVE')
+      const selectedOrganization = activeOrganization(env);
+      if ((await retirementStatus(env.ORG_DB!)).state !== 'ACTIVE') {
         return {
           issuesWrite: false,
           events: [],
           reason: 'ORGANIZATION_RETIRED',
         };
-      const row = await connection(env);
-      if (!row?.installation_id)
-        return { issuesWrite: false, events: [], reason: 'APP_NOT_INSTALLED' };
-      const app = await appClient(env);
+      }
+      const row = await connection(env, selectedOrganization);
+      if (!row?.installation_id) {
+        return {
+          issuesWrite: false,
+          events: [],
+          reason: 'APP_NOT_INSTALLED',
+        };
+      }
+      const app = await appClient(env, selectedOrganization);
       const [installation, details] = await Promise.all([
         app.api<{ permissions: Record<string, string> }>(
           `/app/installations/${row.installation_id}`,
@@ -207,7 +291,7 @@ function competitionServices(env: Env): CompetitionServices {
         }>('/app'),
       ]);
       return {
-        app: appAccess(details, env.ORG_NAME!, row.installation_id),
+        app: appAccess(details, selectedOrganization, row.installation_id),
         issuesWrite: installation.permissions.issues === 'write',
         events: details.events,
         reason:
@@ -221,21 +305,25 @@ function competitionServices(env: Env): CompetitionServices {
 function manifest(
   env: Env,
   state: string,
+  organization: string = activeOrganization(env),
   origin = new URL(env.ORG_PUBLIC_ORIGIN!).origin,
 ) {
   return {
-    action: `https://github.com/organizations/${env.ORG_NAME}/settings/apps/new?state=${state}`,
+    action: `https://github.com/organizations/${organization}/settings/apps/new?state=${state}`,
     manifest: {
-      name: `Judge-C2C ${env.ORG_NAME}`,
+      name: `DoomBot ${organization === organizationNames.vitc ? '180DC' : organization} Judging`,
       url: origin,
       public: false,
       description:
         'Evidence-backed PR evaluation. Does not execute participant code in the control plane.',
-      hook_attributes: { url: origin + '/webhooks/organization', active: true },
-      redirect_url: origin + '/auth/github/manifest',
-      setup_url: origin + '/auth/github/installed',
+      hook_attributes: {
+        url: origin + '/webhooks/organization',
+        active: true,
+      },
+      redirect_url: origin + '/auth/github/manifest' + (hasOrganizationSelection(env) ? '?organization=' + encodeURIComponent(organization) : ''),
+      setup_url: origin + '/auth/github/installed' + (hasOrganizationSelection(env) ? '?organization=' + encodeURIComponent(organization) : ''),
       setup_on_update: true,
-      default_permissions: permissions,
+      default_permissions: requestedPermissions(env),
       // GitHub automatically delivers installation lifecycle events.
       default_events: ['pull_request', 'issues', 'issue_comment'],
     },
@@ -259,7 +347,9 @@ async function organizer(request: Request, env: Env) {
     .first<ConsoleSession>();
 }
 function cookie(token: string, origin: string) {
-  return `judge_organizer=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800${origin.startsWith('https:') ? '; Secure' : ''}`;
+  return `judge_organizer=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800${
+    origin.startsWith('https:') ? '; Secure' : ''
+  }`;
 }
 async function input(request: Request, max = 20000) {
   return JSON.parse(new TextDecoder().decode(await boundedBody(request, max)));
@@ -290,11 +380,14 @@ const appResponse = z.object({
   owner: z.object({ login: z.string(), type: z.literal('Organization') }),
   permissions: z.record(z.string(), z.string()),
 });
-async function sync(env: Env) {
-  const row = await connection(env);
+async function sync(
+  env: Env,
+  organization = activeOrganization(env),
+) {
+  const row = await connection(env, organization);
   if (!row?.installation_id) throw new Error('APP_NOT_INSTALLED');
   const installation = await (
-    await appClient(env)
+    await appClient(env, organization)
   ).api<{
     id: number;
     app_id: number;
@@ -304,11 +397,12 @@ async function sync(env: Env) {
   if (
     installation.app_id !== row.app_id ||
     installation.account.type !== 'Organization' ||
-    installation.account.login.toLowerCase() !== env.ORG_NAME!.toLowerCase() ||
+    installation.account.login.toLowerCase() !== organization.toLowerCase() ||
     installation.suspended_at
-  )
+  ) {
     throw new Error('INSTALLATION_MISMATCH');
-  const client = await installedClient(env);
+  }
+  const client = await installedClient(env, undefined, false, organization);
   const repositories: {
     id: number;
     full_name: string;
@@ -328,17 +422,26 @@ async function sync(env: Env) {
       batch.repositories.some(
         (r) =>
           r.full_name.split('/')[0]!.toLowerCase() !==
-          env.ORG_NAME!.toLowerCase(),
+          organization.toLowerCase(),
       )
-    )
+    ) {
       throw new Error('REPOSITORY_ORGANIZATION_MISMATCH');
+    }
     repositories.push(...batch.repositories);
     if (batch.repositories.length < 100) break;
     if (page === 10) throw new Error('REPOSITORY_LIMIT');
   }
+  const allowedRepositories = hasOrganizationSelection(env)
+    ? competitionRepositories(organization)
+    : competitionRepositories(competitionOwner(env));
+  const activeRepositories = env.MATRIX_MODE === 'true'
+    ? repositories.filter((repository) =>
+        (allowedRepositories as readonly string[]).includes(repository.full_name),
+      )
+    : repositories;
   await env.ORG_DB!.batch([
     env.ORG_DB!.prepare('UPDATE github_repositories SET accessible=0'),
-    ...repositories.map((r) =>
+    ...activeRepositories.map((r) =>
       env
         .ORG_DB!.prepare(
           'INSERT INTO github_repositories(id,full_name,private,default_branch,accessible) VALUES(?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET full_name=excluded.full_name,private=excluded.private,default_branch=excluded.default_branch,accessible=1',
@@ -346,7 +449,7 @@ async function sync(env: Env) {
         .bind(r.id, r.full_name, Number(r.private), r.default_branch),
     ),
   ]);
-  return repositories.length;
+  return activeRepositories.length;
 }
 async function repo(env: Env, id: number) {
   const row = await env
@@ -360,8 +463,9 @@ async function repo(env: Env, id: number) {
 }
 async function activate(request: Request, env: Env, ctx: ExecutionContext) {
   const data = challenge.parse(await input(request));
-  if (redact(canonical(data)) !== canonical(data))
+  if (redact(canonical(data)) !== canonical(data)) {
     return Response.json({ error: 'SECRET_IN_INPUT' }, { status: 400 });
+  }
   const r = await repo(env, data.repositoryId),
     row = await connection(env),
     client = await installedClient(env, r.id);
@@ -377,7 +481,9 @@ async function activate(request: Request, env: Env, ctx: ExecutionContext) {
       `/repos/${r.full_name}/issues/${data.issueNumber}`,
     ),
     client.api<{ sha: string }>(
-      `/repos/${r.full_name}/commits/${data.baseline ?? encodeURIComponent(r.default_branch)}`,
+      `/repos/${r.full_name}/commits/${
+        data.baseline ?? encodeURIComponent(r.default_branch)
+      }`,
     ),
   ]);
   if (
@@ -386,8 +492,9 @@ async function activate(request: Request, env: Env, ctx: ExecutionContext) {
     issue.pull_request ||
     pr.state !== 'open' ||
     pr.base.repo.id !== r.id
-  )
+  ) {
     throw new Error('SUBMISSION_CONTEXT_INVALID');
+  }
   const contract = {
     schemaVersion: 1,
     evaluationVersion: 'app-v1-' + Date.now(),
@@ -397,7 +504,7 @@ async function activate(request: Request, env: Env, ctx: ExecutionContext) {
       fullName: r.full_name,
       installationId: row!.installation_id,
     },
-    department: env.ORG_NAME,
+    department: activeOrganization(env),
     category: 'Engineering challenge',
     baseline: sha.parse(commit.sha),
     issueNumbers: [data.issueNumber],
@@ -542,45 +649,151 @@ export async function organization(
     !env.ORG_DB ||
     !env.ORG_ADMIN_TOKEN ||
     !env.ORG_VAULT_KEY ||
-    !env.ORG_PUBLIC_ORIGIN ||
-    !env.ORG_NAME
-  )
+    !env.ORG_PUBLIC_ORIGIN
+  ) {
     return Response.json(
       { error: 'ORGANIZATION_NOT_CONFIGURED' },
       { status: 503 },
     );
+  }
   const url = new URL(request.url),
     origin = url.origin;
   const json = (data: unknown, status = 200) =>
-    Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
+    Response.json(data, {
+      status,
+      headers: { 'cache-control': 'no-store' },
+    });
   if (
     ![
       new URL(env.ORG_PUBLIC_ORIGIN).origin,
       ...(env.ORG_REVIEW_ORIGINS?.split(',').filter(Boolean) ?? []),
     ].includes(url.origin)
-  )
+  ) {
     return json({ error: 'ORIGIN_NOT_ALLOWED' }, 403);
+  }
+  if (
+    url.pathname === '/api/organization/participant/request-code' &&
+    request.method === 'POST'
+  ) {
+    if (request.headers.get('origin') !== origin) {
+      return json({ error: 'SAME_ORIGIN_REQUIRED' }, 403);
+    }
+    let body: unknown;
+    try {
+      body = await input(request, 1000);
+    } catch {
+      return json({ error: 'INVALID_INPUT' }, 400);
+    }
+    const parsed = z.object({ email: z.email().max(200), teamKey: z.string().trim().max(40).optional() }).strict().safeParse(body);
+    if (!parsed.success) return json({ error: 'INVALID_INPUT' }, 400);
+    const result = await requestParticipantLoginCode(
+      env,
+      parsed.data.email,
+      Date.now(),
+      request.headers.get('cf-connecting-ip') ?? 'local',
+      parsed.data.teamKey,
+    );
+    if (result.status === 503) return json({ error: 'PARTICIPANT_EMAIL_UNAVAILABLE' }, 503);
+    if (result.status === 429) return json({ error: 'VERIFICATION_RATE_LIMIT' }, 429);
+    return json({ sent: true }, 202);
+  }
+  if (
+    url.pathname === '/api/organization/participant/verify' &&
+    request.method === 'POST'
+  ) {
+    if (request.headers.get('origin') !== origin) {
+      return json({ error: 'SAME_ORIGIN_REQUIRED' }, 403);
+    }
+    let body: unknown;
+    try {
+      body = await input(request, 2000);
+    } catch {
+      return json({ error: 'INVALID_INPUT' }, 400);
+    }
+    const parsed = z
+      .object({
+        email: z.email().max(200),
+        code: z.string().regex(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$/),
+        teamKey: z.string().trim().max(40).optional(),
+      })
+      .strict()
+      .safeParse(body);
+    if (!parsed.success) return json({ error: 'INVALID_INPUT' }, 400);
+    const result = await verifyParticipant(
+      env,
+      parsed.data.email,
+      parsed.data.code,
+      new Date().toISOString(),
+      request.headers.get('cf-connecting-ip') ?? 'local',
+      parsed.data.teamKey,
+    );
+    if (result.status !== 200) {
+      return json(
+        {
+          error:
+            result.status === 401
+              ? 'INVALID_INVITATION'
+              : result.status === 429
+                ? 'VERIFICATION_RATE_LIMIT'
+                : 'INVITATION_ALREADY_USED',
+        },
+        result.status,
+      );
+    }
+    return Response.json(
+      { authenticated: true, participant: result.participant },
+      {
+        headers: {
+          'set-cookie': cookie(result.token!, origin),
+          'cache-control': 'no-store',
+        },
+      },
+    );
+  }
+  if (
+    url.pathname === '/api/organization/participant/github-login' &&
+    request.method === 'POST'
+  ) {
+    return json({ error: 'EMAIL_OTP_REQUIRED' }, 403);
+  }
   if (url.pathname === '/webhooks/organization') {
-    if (request.method !== 'POST')
+    if (request.method !== 'POST') {
       return json({ error: 'METHOD_NOT_ALLOWED' }, 405);
-    if ((await retirementStatus(env.ORG_DB)).state !== 'ACTIVE')
+    }
+    if ((await retirementStatus(env.ORG_DB)).state !== 'ACTIVE') {
       return json({ error: 'ORGANIZATION_RETIRED' }, 409);
-    const row = await connection(env);
-    if (!row) return json({ error: 'APP_NOT_CONNECTED' }, 503);
-    const orgenv = await organizationEnv(env);
+    }
     const body = await boundedBody(request, 1_000_000);
-    if (
-      !(await verifyWebhook(
-        body,
-        request.headers.get('x-hub-signature-256'),
-        orgenv.GITHUB_WEBHOOK_SECRET!,
-      ))
-    )
-      return json({ error: 'INVALID_SIGNATURE' }, 401);
+    const matched = await webhookConnection(
+      env,
+      body,
+      request.headers.get('x-hub-signature-256'),
+    );
+    if (!matched) return json({ error: 'INVALID_SIGNATURE' }, 401);
+    const active = activeOrganization(env);
+    if (matched.organization !== active) {
+      return json({ status: 'inactive_organization_ignored' }, 202);
+    }
+    const row = matched.row;
+    const orgenv = await organizationEnvFor(env, matched.organization);
     const event = request.headers.get('x-github-event');
     const delivery = request.headers.get('x-github-delivery');
-    if (!delivery || !/^[a-zA-Z0-9-]{1,100}$/.test(delivery))
+    if (!delivery || !/^[a-zA-Z0-9-]{1,100}$/.test(delivery)) {
       return json({ error: 'INVALID_DELIVERY' }, 400);
+    }
+    if (env.MATRIX_MODE === 'true' && event === 'pull_request') {
+      return acceptMatrixPR(
+        JSON.parse(new TextDecoder().decode(body)),
+        env,
+        delivery,
+        await digest(new TextDecoder().decode(body)),
+        undefined,
+        {
+          deferReviewer: (task) => ctx.waitUntil(task),
+          deferPublication: (task) => ctx.waitUntil(task),
+        },
+      );
+    }
     if (event === 'installation' || event === 'installation_repositories') {
       const payloadHash = await digest(new TextDecoder().decode(body));
       const previous = await env.ORG_DB.prepare(
@@ -588,7 +801,7 @@ export async function organization(
       )
         .bind(delivery)
         .first<{ payload_hash: string }>();
-      if (previous)
+      if (previous) {
         return json(
           {
             status:
@@ -598,23 +811,37 @@ export async function organization(
           },
           previous.payload_hash === payloadHash ? 200 : 409,
         );
+      }
       const payload = z
         .object({
           action: z.string(),
           installation: z.object({ id: z.number().int().positive() }),
         })
         .parse(JSON.parse(new TextDecoder().decode(body)));
-      if (payload.installation.id !== row.installation_id)
+      if (payload.installation.id !== row.installation_id) {
         return json({ error: 'UNKNOWN_INSTALLATION' }, 403);
+      }
       let suspended = payload.action === 'suspend';
       if (suspended) {
         // A delayed suspend delivery must not undo a newer unsuspension.
         const current = await (
-          await appClient(env)
+          await appClient(env, matched.organization)
         ).api<{ suspended_at: string | null }>(
           `/app/installations/${row.installation_id}`,
         );
         suspended = !!current.suspended_at;
+      }
+      if (matched.organization !== active) {
+        if (hasOrganizationSelection(env)) {
+          await env.ORG_DB.batch([
+            payload.action === 'deleted'
+              ? env.ORG_DB.prepare('UPDATE github_connections SET installation_id=NULL,suspended=0 WHERE organization=? AND installation_id=?').bind(matched.organization, row.installation_id)
+              : env.ORG_DB.prepare('UPDATE github_connections SET suspended=? WHERE organization=? AND installation_id=?').bind(Number(suspended), matched.organization, row.installation_id),
+            env.ORG_DB.prepare('INSERT INTO audit(action,entity) VALUES(?,?)').bind('installation.' + payload.action, String(row.installation_id)),
+            env.ORG_DB.prepare('INSERT OR IGNORE INTO deliveries(id,payload_hash,event) VALUES(?,?,?)').bind(delivery, payloadHash, event),
+          ]);
+        }
+        return json({ status: 'inactive_installation_updated' });
       }
       if (payload.action === 'deleted' || suspended) {
         await env.ORG_DB.batch([
@@ -627,10 +854,17 @@ export async function organization(
           ).bind('installation.' + payload.action, String(row.installation_id)),
           ...(payload.action === 'deleted'
             ? [
-                env.ORG_DB.prepare(
-                  'UPDATE github_connection SET installation_id=NULL WHERE id=1',
-                ),
+                hasOrganizationSelection(env)
+                  ? env.ORG_DB.prepare(
+                      'UPDATE github_connections SET installation_id=NULL,suspended=0 WHERE organization=?',
+                    ).bind(activeOrganization(env))
+                  : env.ORG_DB.prepare(
+                      'UPDATE github_connection SET installation_id=NULL WHERE id=1',
+                    ),
               ]
+            : []),
+          ...(hasOrganizationSelection(env) && payload.action !== 'deleted'
+            ? [env.ORG_DB.prepare('UPDATE github_connections SET suspended=? WHERE organization=?').bind(Number(suspended), activeOrganization(env))]
             : []),
         ]);
       } else await sync(env);
@@ -641,6 +875,7 @@ export async function organization(
         .run();
       return json({ status: 'synchronized' });
     }
+    if (env.MATRIX_MODE === 'true') return json({ status: 'ignored' }, 202);
     if (
       event === 'issues' ||
       event === 'issue_comment' ||
@@ -663,19 +898,24 @@ export async function organization(
     }
     if (event === 'pull_request') {
       const payload = z
-        .object({ repository: z.object({ id: z.number().int().positive() }) })
+        .object({
+          repository: z.object({ id: z.number().int().positive() }),
+        })
         .parse(JSON.parse(new TextDecoder().decode(body)));
       const selected = await env.ORG_DB.prepare(
         'SELECT id FROM github_repositories WHERE id=? AND accessible=1',
       )
         .bind(payload.repository.id)
         .first();
-      if (!selected) return json({ error: 'REPOSITORY_NOT_SELECTED' }, 403);
+      if (!selected) {
+        return json({ error: 'REPOSITORY_NOT_SELECTED' }, 403);
+      }
     }
     return webhook(new Request(request, { body }), orgenv, ctx);
   }
-  if (request.method !== 'GET' && request.headers.get('origin') !== origin)
+  if (request.method !== 'GET' && request.headers.get('origin') !== origin) {
     return json({ error: 'SAME_ORIGIN_REQUIRED' }, 403);
+  }
   if (url.pathname === '/api/organization/login' && request.method === 'POST') {
     const data = z
       .object({ token: z.string().max(200) })
@@ -738,17 +978,18 @@ export async function organization(
   }
   const session = await organizer(request, env);
   if (url.pathname === '/api/organization/status' && request.method === 'GET') {
-    if (!session)
-      return json({ organization: env.ORG_NAME, authenticated: false });
+    if (!session) {
+      return json({ organization: activeOrganization(env), authenticated: false });
+    }
     const identity = {
       id: session.identity_id,
       name: session.name,
       role: session.role,
       teamId: session.team_id,
     };
-    if (session.role === 'participant')
+    if (session.role === 'participant') {
       return json({
-        organization: env.ORG_NAME,
+        organization: activeOrganization(env),
         authenticated: true,
         role: session.role,
         identity,
@@ -757,7 +998,18 @@ export async function organization(
           archiveReadOnly: (await retirementStatus(env.ORG_DB)).archiveReadOnly,
         },
       });
-    const row = await connection(env);
+    }
+    const selectedOrganization = activeOrganization(env);
+    const row = await connection(env, selectedOrganization);
+    const connections = hasOrganizationSelection(env)
+      ? (
+          await env.ORG_DB!.prepare(
+            'SELECT organization,app_id,slug,installation_id,suspended FROM github_connections ORDER BY organization',
+          ).all<{ organization: string; app_id: number; slug: string; installation_id: number | null; suspended: number }>()
+        ).results
+      : row
+        ? [{ organization: selectedOrganization, app_id: row.app_id, slug: row.slug, installation_id: row.installation_id }]
+        : [];
     return json({
       retirement:
         session.role === 'organizer'
@@ -768,7 +1020,21 @@ export async function organization(
                 .archiveReadOnly,
             },
       identity,
-      organization: env.ORG_NAME,
+      organization: selectedOrganization,
+      organizationSelection: hasOrganizationSelection(env)
+        ? {
+            doomForge: env.USE_DOOMFORGE_ORG === 'true',
+            vitc: env.USE_180DC_ORG === 'true',
+          }
+        : null,
+      connections: connections.map((item) => ({
+        organization: item.organization,
+        id: item.app_id,
+        slug: item.slug,
+        installationId: item.installation_id,
+        suspended: 'suspended' in item && item.suspended === 1,
+        installUrl: `https://github.com/apps/${item.slug}/installations/new?organization=${encodeURIComponent(item.organization)}`,
+      })),
       authenticated: true,
       role: session.role,
       runner: {
@@ -803,7 +1069,7 @@ export async function organization(
             id: row.app_id,
             slug: row.slug,
             installationId: row.installation_id,
-            installUrl: `https://github.com/apps/${row.slug}/installations/new`,
+            installUrl: `https://github.com/apps/${row.slug}/installations/new?organization=${encodeURIComponent(selectedOrganization)}`,
           }
         : null,
     });
@@ -811,19 +1077,69 @@ export async function organization(
   if (!session) return json({ error: 'UNAUTHORIZED' }, 401);
   const actor = session.role + ':' + (session.identity_id ?? session.hash);
   if (
+    url.pathname === '/api/organization/matrix-container-check' &&
+    request.method === 'POST'
+  ) {
+    if (session.role !== 'organizer') return json({ error: 'ORGANIZER_REQUIRED' }, 403);
+    const commits = z.object({
+      'mazhai-cover': z.string().regex(/^[a-f0-9]{40}$/),
+      pricingpulse: z.string().regex(/^[a-f0-9]{40}$/),
+      'veera-footwear': z.string().regex(/^[a-f0-9]{40}$/),
+      janus: z.string().regex(/^[a-f0-9]{40}$/),
+    }).strict().safeParse(await input(request, 1024));
+    if (!commits.success) return json({ error: 'INVALID_INPUT' }, 400);
+    let sources;
+    try {
+      sources = await readDiagnosticSources(commits.data, activeOrganization(env));
+    } catch (error) {
+      return json({
+        error: 'MATRIX_DIAGNOSTIC_SOURCE_UNAVAILABLE',
+        repository: error instanceof DiagnosticSourceError ? error.repository : null,
+        sourceStatus: error instanceof DiagnosticSourceError ? error.sourceStatus : 'FETCH_FAILED',
+      }, 424);
+    }
+    const bucket = 'matrix-container-diagnostic-v2:' + Math.floor(Date.now() / 1800000);
+    await env.ORG_DB.prepare(
+      'INSERT INTO organizer_login_limits(bucket,count) VALUES(?,1) ON CONFLICT(bucket) DO UPDATE SET count=count+1',
+    ).bind(bucket).run();
+    const limit = await env.ORG_DB.prepare(
+      'SELECT count FROM organizer_login_limits WHERE bucket=?',
+    ).bind(bucket).first<{ count: number }>();
+    if ((limit?.count ?? 0) > 2) return json({ error: 'MATRIX_DIAGNOSTIC_RATE_LIMIT' }, 429);
+    const result = await diagnoseMatrixContainers(env, sources);
+    await env.ORG_DB.prepare('INSERT INTO audit(action,entity) VALUES(?,?)')
+      .bind('matrix.container.diagnostic', redact(canonical(result))).run();
+    return json(result, result.status === 'READY' ? 200 : 502);
+  }
+  if (url.pathname === '/api/organization/announcements') {
+    return roundTwoAnnouncements(request, env, session);
+  }
+  const judgeReviewMutation =
+    request.method === 'POST' &&
+    url.pathname === '/api/organization/round-two/reviews';
+  if (
     session.role === 'judge' &&
     !(
       request.method === 'GET' && url.pathname.startsWith('/api/organization/')
     ) &&
+    !judgeReviewMutation &&
     url.pathname !== '/api/organization/logout'
-  )
+  ) {
     return json({ error: 'ORGANIZER_REQUIRED' }, 403);
+  }
+  if (
+    url.pathname.startsWith('/api/organization/manage/') &&
+    session.role !== 'organizer'
+  ) {
+    return json({ error: 'ORGANIZER_REQUIRED' }, 403);
+  }
   if (
     url.pathname === '/api/organization/retire' &&
     request.method === 'POST'
   ) {
-    if (session.role !== 'organizer')
+    if (session.role !== 'organizer') {
       return json({ error: 'ORGANIZER_REQUIRED' }, 403);
+    }
     const row = await connection(env);
     if (!row) return json({ error: 'APP_NOT_CONNECTED' }, 409);
     let body: unknown;
@@ -840,33 +1156,45 @@ export async function organization(
       url.pathname !== '/api/organization/logout') ||
       url.pathname.startsWith('/auth/github/') ||
       /\/repositories\/[0-9]+\/context$/.test(url.pathname))
-  )
+  ) {
     return json({ error: 'ORGANIZATION_RETIRED' }, 409);
+  }
   if (
     url.pathname === '/api/organization/identities' ||
     url.pathname.startsWith('/api/organization/identities/')
-  )
+  ) {
     return manageIdentities(request, env, session);
+  }
   if (
     url.pathname === '/api/organization/participant' ||
     url.pathname.startsWith('/api/organization/participant/')
-  )
+  ) {
     return participantConsole(request, env, session);
+  }
   if (
     session.role === 'participant' &&
     url.pathname !== '/api/organization/logout'
-  )
+  ) {
     return json({ error: 'PARTICIPANT_SCOPE_REQUIRED' }, 403);
+  }
   if (
     url.pathname === '/api/organization/security-reports' ||
     url.pathname.startsWith('/api/organization/security-reports/')
-  )
+  ) {
     return confidentialSecurity(request, env, actor);
+  }
   if (
     session.role === 'security' &&
     url.pathname !== '/api/organization/logout'
-  )
+  ) {
     return json({ error: 'ORGANIZER_REQUIRED' }, 403);
+  }
+  if (
+    url.pathname === '/api/organization/round-two' ||
+    url.pathname.startsWith('/api/organization/round-two/')
+  ) {
+    return roundTwoReview(request, env, session);
+  }
   const contributionCreate = url.pathname.match(
     /^\/api\/organization\/evaluations\/([a-f0-9]{64})\/contributions$/,
   );
@@ -900,15 +1228,18 @@ export async function organization(
     url.pathname === '/api/organization/system/metrics' &&
     request.method === 'GET'
   ) {
-    if (session.role !== 'organizer')
+    if (session.role !== 'organizer') {
       return json({ error: 'ORGANIZER_REQUIRED' }, 403);
+    }
     const minutes = z.coerce
       .number()
       .int()
       .min(1)
       .max(10080)
       .safeParse(url.searchParams.get('minutes') ?? '60');
-    if (!minutes.success) return json({ error: 'INVALID_METRICS_WINDOW' }, 400);
+    if (!minutes.success) {
+      return json({ error: 'INVALID_METRICS_WINDOW' }, 400);
+    }
     try {
       const buckets = [
         ...(await readOperationalMetrics(env.ORG_DB!, minutes.data)),
@@ -936,8 +1267,9 @@ export async function organization(
       return json({ error: 'METRICS_UNAVAILABLE' }, 503);
     }
   }
-  if (url.pathname.startsWith('/api/organization/manage/'))
+  if (url.pathname.startsWith('/api/organization/manage/')) {
     return competition(request, env, ctx, competitionServices(env), actor);
+  }
   if (
     url.pathname === '/api/organization/runner-check' &&
     request.method === 'POST'
@@ -953,8 +1285,9 @@ export async function organization(
     )
       .bind(bucket)
       .first<{ count: number }>();
-    if (limit!.count > 2)
+    if (limit!.count > 2) {
       return json({ error: 'RUNNER_DIAGNOSTIC_RATE_LIMIT' }, 429);
+    }
     try {
       const result = await runnerDiagnostic(env);
       await env.ORG_DB.prepare('INSERT INTO audit(action,entity) VALUES(?,?)')
@@ -987,8 +1320,9 @@ export async function organization(
     )
       .bind(bucket)
       .first<{ count: number }>();
-    if (limit!.count > 2)
+    if (limit!.count > 2) {
       return json({ error: 'REVIEWER_DIAGNOSTIC_RATE_LIMIT' }, 429);
+    }
     const context = {
       files: [
         {
@@ -1012,7 +1346,9 @@ export async function organization(
             env.AI_PROVIDER ?? 'cloudflare',
           )
         : undefined;
-    if (slot === null) return json({ error: 'REVIEWER_CAPACITY_BUSY' }, 429);
+    if (slot === null) {
+      return json({ error: 'REVIEWER_CAPACITY_BUSY' }, 429);
+    }
     let reviewed;
     try {
       reviewed = await aiReview(env, demoContract, context, evidence);
@@ -1053,16 +1389,30 @@ export async function organization(
     );
   }
   if (url.pathname === '/api/organization/start' && request.method === 'POST') {
-    if (await connection(env))
+    const requestedOrganization = hasOrganizationSelection(env)
+      ? z.enum([organizationNames.doomForge, organizationNames.vitc]).parse(
+          url.searchParams.get('organization') ?? activeOrganization(env),
+        )
+      : activeOrganization(env);
+    if (await connection(env, requestedOrganization)) {
       return json({ error: 'APP_ALREADY_REGISTERED' }, 409);
+    }
     hex.parse(env.ORG_VAULT_KEY);
     const state = random();
-    await env.ORG_DB.prepare(
-      'INSERT INTO github_setup_states(hash,session_hash,expires_at) VALUES(?,?,?)',
-    )
-      .bind(await digest(state), session.hash, Date.now() + 3600000)
-      .run();
-    return json(manifest(env, state, origin));
+    if (hasOrganizationSelection(env)) {
+      await env.ORG_DB.prepare(
+        'INSERT INTO github_setup_states(hash,session_hash,expires_at,organization) VALUES(?,?,?,?)',
+      )
+        .bind(await digest(state), session.hash, Date.now() + 3600000, requestedOrganization)
+        .run();
+    } else {
+      await env.ORG_DB.prepare(
+        'INSERT INTO github_setup_states(hash,session_hash,expires_at) VALUES(?,?,?)',
+      )
+        .bind(await digest(state), session.hash, Date.now() + 3600000)
+        .run();
+    }
+    return json(manifest(env, state, requestedOrganization, origin));
   }
   if (url.pathname === '/auth/github/manifest' && request.method === 'GET') {
     const state = hex.parse(url.searchParams.get('state')),
@@ -1070,12 +1420,26 @@ export async function organization(
         .string()
         .regex(/^[A-Za-z0-9_-]{10,200}$/)
         .parse(url.searchParams.get('code'));
+    let targetOrganization: string;
+    if (hasOrganizationSelection(env)) {
+      const setup = await env.ORG_DB.prepare(
+        'SELECT organization FROM github_setup_states WHERE hash=? AND session_hash=? AND used=0 AND expires_at>?',
+      )
+        .bind(await digest(state), session.hash, Date.now())
+        .first<{ organization: SupportedOrganization }>();
+      if (!setup) return json({ error: 'INVALID_SETUP_STATE' }, 403);
+      targetOrganization = setup.organization;
+    } else {
+      targetOrganization = activeOrganization(env);
+    }
     const spent = await env.ORG_DB.prepare(
       'UPDATE github_setup_states SET used=1 WHERE hash=? AND session_hash=? AND used=0 AND expires_at>?',
     )
       .bind(await digest(state), session.hash, Date.now())
       .run();
-    if (!spent.meta.changes) return json({ error: 'INVALID_SETUP_STATE' }, 403);
+    if (!spent.meta.changes) {
+      return json({ error: 'INVALID_SETUP_STATE' }, 403);
+    }
     const value = appResponse.parse(
       await new GitHub(undefined, env.ORG_DB).api(
         `/app-manifests/${code}/conversions`,
@@ -1085,17 +1449,18 @@ export async function organization(
       ),
     );
     if (
-      value.owner.login.toLowerCase() !== env.ORG_NAME.toLowerCase() ||
+      value.owner.login.toLowerCase() !== targetOrganization.toLowerCase() ||
       Object.entries(value.permissions).some(([key, access]) =>
         key === 'metadata'
           ? access !== 'read'
-          : permissions[key as keyof typeof permissions] !== access,
+          : requestedPermissions(env)[key as keyof typeof permissions] !== access,
       ) ||
-      Object.entries(permissions).some(
+      Object.entries(requestedPermissions(env)).some(
         ([key, access]) => value.permissions[key] !== access,
       )
-    )
+    ) {
       return json({ error: 'APP_PERMISSIONS_OR_OWNER_MISMATCH' }, 403);
+    }
     const key = createPrivateKey(value.pem)
       .export({ type: 'pkcs8', format: 'pem' })
       .toString();
@@ -1105,13 +1470,17 @@ export async function organization(
       key,
       webhookSecret: value.webhook_secret,
     });
-    const result = await env.ORG_DB.prepare(
-      'INSERT OR IGNORE INTO github_connection(id,app_id,slug,encrypted) VALUES(1,?,?,?)',
-    )
-      .bind(value.id, value.slug, encrypted)
-      .run();
-    if (!result.meta.changes)
+    const resultStatement = env.ORG_DB.prepare(
+      hasOrganizationSelection(env)
+        ? 'INSERT OR IGNORE INTO github_connections(organization,app_id,slug,encrypted) VALUES(?,?,?,?)'
+        : 'INSERT OR IGNORE INTO github_connection(id,app_id,slug,encrypted) VALUES(1,?,?,?)',
+    );
+    const result = hasOrganizationSelection(env)
+      ? await resultStatement.bind(targetOrganization, value.id, value.slug, encrypted).run()
+      : await resultStatement.bind(value.id, value.slug, encrypted).run();
+    if (!result.meta.changes) {
       return json({ error: 'APP_ALREADY_REGISTERED' }, 409);
+    }
     return Response.redirect(origin + '/?organization=1', 303);
   }
   if (url.pathname === '/auth/github/installed' && request.method === 'GET') {
@@ -1120,10 +1489,15 @@ export async function organization(
       .int()
       .positive()
       .parse(url.searchParams.get('installation_id'));
-    const row = await connection(env);
+    const targetOrganization = hasOrganizationSelection(env)
+      ? z.enum([organizationNames.doomForge, organizationNames.vitc]).parse(
+          url.searchParams.get('organization') ?? activeOrganization(env),
+        )
+      : activeOrganization(env);
+    const row = await connection(env, targetOrganization);
     if (!row) return json({ error: 'APP_NOT_CONNECTED' }, 409);
     const installation = await (
-      await appClient(env)
+      await appClient(env, targetOrganization)
     ).api<{
       app_id: number;
       account: { login: string; type: string };
@@ -1132,31 +1506,44 @@ export async function organization(
     if (
       installation.app_id !== row.app_id ||
       installation.account.type !== 'Organization' ||
-      installation.account.login.toLowerCase() !== env.ORG_NAME.toLowerCase() ||
+      installation.account.login.toLowerCase() !== targetOrganization.toLowerCase() ||
       installation.suspended_at
-    )
+    ) {
       return json({ error: 'INSTALLATION_MISMATCH' }, 403);
-    await env.ORG_DB.prepare(
-      'UPDATE github_connection SET installation_id=? WHERE id=1',
-    )
-      .bind(id)
-      .run();
-    await sync(env);
+    }
+    if (hasOrganizationSelection(env)) {
+      await env.ORG_DB.prepare(
+        'UPDATE github_connections SET installation_id=?,suspended=0 WHERE organization=? AND app_id=?',
+      )
+        .bind(id, targetOrganization, row.app_id)
+        .run();
+    } else {
+      await env.ORG_DB.prepare(
+        'UPDATE github_connection SET installation_id=? WHERE id=1',
+      )
+        .bind(id)
+        .run();
+    }
+    if (targetOrganization === activeOrganization(env)) await sync(env);
     return Response.redirect(origin + '/?organization=1', 303);
   }
-  if (url.pathname === '/api/organization/sync' && request.method === 'POST')
+  if (url.pathname === '/api/organization/sync' && request.method === 'POST') {
     return json({ count: await sync(env) });
+  }
   if (
     url.pathname === '/api/organization/repositories' &&
     request.method === 'GET'
-  )
+  ) {
     return json({
       repositories: (
         await env.ORG_DB.prepare(
-          'SELECT id,full_name,private,default_branch,accessible FROM github_repositories ORDER BY full_name',
-        ).all()
+          env.MATRIX_MODE === 'true'
+            ? 'SELECT id,full_name,private,default_branch,accessible FROM github_repositories WHERE full_name IN (?,?,?,?) ORDER BY full_name'
+            : 'SELECT id,full_name,private,default_branch,accessible FROM github_repositories ORDER BY full_name',
+        ).bind(...(env.MATRIX_MODE === 'true' ? competitionRepositories(competitionOwner(env)) : [])).all()
       ).results,
     });
+  }
   const repoMatch = url.pathname.match(
     /^\/api\/organization\/repositories\/([0-9]+)\/context$/,
   );
@@ -1192,22 +1579,31 @@ export async function organization(
   if (
     url.pathname === '/api/organization/challenges' &&
     request.method === 'POST'
-  )
+  ) {
     return activate(request, env, ctx);
-  if (url.pathname === '/api/organization/overview' && request.method === 'GET')
+  }
+  if (
+    url.pathname === '/api/organization/overview' &&
+    request.method === 'GET'
+  ) {
     return api(
       new Request(origin + '/api/overview', {
         headers: { authorization: 'Bearer ' + env.ORG_ADMIN_TOKEN },
       }),
       await organizationEnv(env),
     );
-  if (url.pathname === '/api/organization/artifact' && request.method === 'GET')
+  }
+  if (
+    url.pathname === '/api/organization/artifact' &&
+    request.method === 'GET'
+  ) {
     return api(
       new Request(origin + '/api/artifact' + url.search, {
         headers: { authorization: 'Bearer ' + env.ORG_ADMIN_TOKEN },
       }),
       await organizationEnv(env),
     );
+  }
   const evaluation = url.pathname.match(
     /^\/api\/organization\/evaluations\/([a-f0-9]{64})(\/bundle|\/retry|\/artifacts\/retry)?$/,
   );
@@ -1215,7 +1611,7 @@ export async function organization(
     evaluation &&
     ((request.method === 'GET' && !evaluation[2]?.endsWith('/retry')) ||
       (request.method === 'POST' && evaluation[2]?.endsWith('/retry')))
-  )
+  ) {
     return api(
       new Request(
         origin + '/api/evaluations/' + evaluation[1] + (evaluation[2] ?? ''),
@@ -1230,6 +1626,7 @@ export async function organization(
       ),
       await organizationEnv(env),
     );
+  }
   return json({ error: 'NOT_FOUND' }, 404);
 }
 

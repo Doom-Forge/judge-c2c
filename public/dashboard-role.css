@@ -1,0 +1,458 @@
+.dashboard-header,
+.dashboard-main,
+.preview-banner,
+.dashboard-footer {
+  font-family:
+    'Avenir Next',
+    'SF Pro Display',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family:
+    'Avenir Next',
+    'SF Pro Display',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.skip-link {
+  position: absolute;
+  z-index: 20;
+  inset-block-start: 8px;
+  inset-inline-start: 8px;
+  padding: 10px 14px;
+  transform: translateY(-150%);
+  background: var(--white);
+  color: var(--ink);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.dashboard-header {
+  position: sticky;
+  z-index: 10;
+  inset-block-start: 0;
+  display: grid;
+  grid-template-columns: minmax(210px, 1fr) auto minmax(210px, 1fr);
+  align-items: center;
+  gap: 20px;
+  min-height: 72px;
+  padding: 10px clamp(16px, 3vw, 36px);
+  border-block-end: 1px solid var(--line);
+  background: var(--nav);
+}
+
+.dashboard-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 10px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.dashboard-brand-name {
+  display: grid;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.dashboard-brand-name small {
+  margin-block-start: 4px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dashboard-mark {
+  display: grid;
+  place-items: center;
+  inline-size: 38px;
+  block-size: 38px;
+  background: var(--accent);
+  color: var(--canvas);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.role-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.role-tab {
+  min-width: 76px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+}
+
+.role-tab:hover {
+  background: color-mix(in srgb, var(--accent) 9%, var(--nav));
+  color: var(--ink);
+}
+
+.role-tab.is-active {
+  background: color-mix(in srgb, var(--accent) 14%, var(--nav));
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.dashboard-actions {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 8px;
+}
+
+.dashboard-actions .button,
+.dashboard-actions #theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: var(--white);
+  color: var(--ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.dashboard-actions .button:hover,
+.dashboard-actions #theme-toggle:hover {
+  border-color: var(--accent);
+}
+
+.preview-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  padding: 8px clamp(16px, 3vw, 36px);
+  border-block-end: 1px solid var(--line);
+  background: var(--df-raised);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.preview-banner strong {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.service-status {
+  margin-inline-start: auto;
+  text-align: end;
+}
+
+.dashboard-main {
+  width: min(100%, 1440px);
+  margin-inline: auto;
+  padding-block: 30px 48px;
+  padding-inline: clamp(16px, 3vw, 36px);
+}
+
+.dashboard-main .page-head {
+  margin-block-end: 24px;
+}
+
+.dashboard-main .page-head .eyebrow {
+  margin: 0 0 8px;
+}
+
+.dashboard-main .page-head h1 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.dashboard-main .workflow-strip {
+  margin-block-end: 28px;
+}
+
+.role-panel[hidden] {
+  display: none;
+}
+
+.role-panel-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-block-end: 16px;
+}
+
+.role-panel-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 23px;
+  line-height: 1.2;
+}
+
+.role-panel-head p {
+  max-width: 68ch;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  gap: 12px;
+}
+
+#organizer-panel .role-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.queue-panel {
+  margin-block-start: 16px;
+}
+
+.queue-panel .panel-head {
+  align-items: center;
+}
+
+.queue-panel table {
+  min-width: 720px;
+}
+
+.queue-panel caption {
+  padding: 12px 18px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: start;
+}
+
+.queue-panel td {
+  white-space: normal;
+}
+
+.role-card {
+  min-width: 0;
+  margin: 0;
+  padding: 18px 20px;
+}
+
+.role-card h3 {
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.role-card p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.file-label {
+  display: block;
+  margin-block-start: 14px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#analysis-file {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  margin-block-start: 6px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+}
+
+#analysis-file::file-selector-button {
+  min-height: 30px;
+  margin-inline-end: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  background: var(--df-raised);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+}
+
+.file-status {
+  min-height: 3em;
+  overflow-wrap: anywhere;
+}
+
+.role-card a {
+  display: inline-block;
+  margin-block-start: 14px;
+  color: var(--accent);
+}
+
+.detail-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.detail-list div {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.7fr) minmax(0, 1.3fr);
+  gap: 12px;
+  padding-block-start: 10px;
+  border-block-start: 1px solid var(--line);
+}
+
+.detail-list dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.detail-list dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.role-note {
+  max-width: 72ch;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.dashboard-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-block-start: 28px;
+  padding-block-start: 14px;
+  border-block-start: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dashboard-footer a {
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+@media (max-width: 1000px) {
+  .dashboard-header {
+    grid-template-columns: 1fr auto;
+  }
+
+  .role-tabs {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+  }
+
+  .dashboard-brand {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .dashboard-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  #organizer-panel .role-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .dashboard-header {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding-block-end: 8px;
+  }
+
+  .dashboard-brand {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .dashboard-actions {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  .role-tabs {
+    grid-column: 1;
+    grid-row: 3;
+    width: 100%;
+    gap: 2px;
+  }
+
+  .role-tab {
+    flex: 1;
+    min-width: 0;
+    padding-inline: 8px;
+  }
+
+  .dashboard-actions .button {
+    min-width: 44px;
+    max-width: none;
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  .preview-banner {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .service-status {
+    margin-inline-start: 0;
+    text-align: start;
+  }
+
+  .role-panel-head,
+  .dashboard-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  #organizer-panel .role-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

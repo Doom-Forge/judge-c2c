@@ -132,15 +132,20 @@ export const memberSchema = z
     githubLogin: z
       .string()
       .trim()
-      .regex(/^@?[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$/),
+      .regex(/^@?[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$/)
+      .optional(),
     displayName: z.string().trim().min(1).max(100),
     email: z.email().max(200).optional(),
     externalId: z.string().max(100).optional(),
   })
-  .strict();
+  .strict()
+  .refine((member) => Boolean(member.githubLogin || member.email), {
+    message: 'MEMBER_EMAIL_OR_GITHUB_REQUIRED',
+  });
 export const teamCreateSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
+    leadEmail: z.email().max(200).optional(),
     status: teamStatus.default('PENDING'),
     metadata: z.record(z.string().max(50), z.string().max(500)).default({}),
     members: z.array(memberSchema).min(1).max(30),
@@ -206,9 +211,9 @@ export function linkedIssueNumbers(description: string, fullName: string) {
     /\b(?:fix(?:es|ed)?|clos(?:e|es|ed)|resolv(?:e|es|ed)|referenc(?:e|es|ed)|address(?:es|ed)?|implement(?:s|ed)?)\s+(?:https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/|([\w.-]+\/[\w.-]+)#|#)([1-9]\d{0,8})/gi;
   for (const match of description.matchAll(pattern)) {
     const repository = match[1] ?? match[2];
-    if (repository && repository.toLowerCase() !== fullName.toLowerCase())
+    if (repository && repository.toLowerCase() !== fullName.toLowerCase()) {
       foreign.push(repository + '#' + match[3]);
-    else local.add(Number(match[3]));
+    } else local.add(Number(match[3]));
   }
   return { local: [...local].sort((a, b) => a - b), foreign };
 }
@@ -263,8 +268,9 @@ export function classifyIssue(
   if (!type) flags.push('needs-triage');
   if (body.trim().length < 40) flags.push('needs-information');
   if (security) flags.push('security-review');
-  if (type === 'bug' && !/\b(reproduc|steps|expected|actual)\b/i.test(body))
+  if (type === 'bug' && !/\b(reproduc|steps|expected|actual)\b/i.test(body)) {
     flags.push('needs-information');
+  }
   const explicit = (field: string, allowed: string[]) => {
     const values = [
       ...new Set(
@@ -363,12 +369,13 @@ export function parseTeamCSV(text: string) {
     ?.map((h) => h.replace(/^\uFEFF/, '').toLowerCase());
   if (
     !headers ||
-    !['team_name', 'participant_name', 'github_username'].every((h) =>
+    !['team_name', 'participant_name'].every((h) =>
       headers.includes(h),
     ) ||
     new Set(headers).size !== headers.length
-  )
+  ) {
     throw new Error('IMPORT_HEADERS_REQUIRED');
+  }
   if (rows.length > 100) throw new Error('IMPORT_ROW_LIMIT');
   const teams = new Map<
     string,
@@ -376,21 +383,28 @@ export function parseTeamCSV(text: string) {
       name: string;
       status: z.infer<typeof teamStatus>;
       repositoryNames: string[];
+      leadEmail?: string;
       members: z.infer<typeof memberSchema>[];
       repositoryIds: number[];
       initialIssues: { repository: string; issueNumber: number }[];
     }
   >();
   for (const cells of rows) {
-    if (cells.length !== headers.length) throw new Error('INVALID_CSV_COLUMNS');
+    if (cells.length !== headers.length) {
+      throw new Error('INVALID_CSV_COLUMNS');
+    }
     const entry = Object.fromEntries(headers.map((h, i) => [h, cells[i]!]));
     const name = entry.team_name!;
+    const leadEmail = entry.team_lead_email
+      ? z.email().max(200).parse(entry.team_lead_email).toLowerCase()
+      : undefined;
     let team = teams.get(name);
     if (!team) {
       team = {
         name,
         status: teamStatus.parse(entry.team_status || 'PENDING'),
         repositoryNames: [],
+        leadEmail,
         members: [],
         repositoryIds: [],
         initialIssues: [],
@@ -399,30 +413,50 @@ export function parseTeamCSV(text: string) {
     } else if (
       entry.team_status &&
       team.status !== teamStatus.parse(entry.team_status)
-    )
+    ) {
       throw new Error('IMPORT_CONFLICTING_TEAM_STATUS');
+    }
+    if (
+      leadEmail &&
+      team.leadEmail &&
+      leadEmail.toLowerCase() !== team.leadEmail.toLowerCase()
+    ) {
+      throw new Error('IMPORT_CONFLICTING_TEAM_LEAD');
+    }
+    if (leadEmail) team.leadEmail ??= leadEmail;
+    const participantEmail = entry.email
+      ? z.email().max(200).parse(entry.email).toLowerCase()
+      : undefined;
     team.members.push(
       memberSchema.parse({
-        githubLogin: entry.github_username,
+        ...(entry.github_username
+          ? { githubLogin: entry.github_username }
+          : {}),
         displayName: entry.participant_name,
-        ...(entry.email ? { email: entry.email } : {}),
+        ...(participantEmail ? { email: participantEmail } : {}),
         ...(entry.external_id ? { externalId: entry.external_id } : {}),
       }),
     );
     if (entry.repository && entry.issue_number) {
       const issueNumber = Number(entry.issue_number);
-      if (!Number.isSafeInteger(issueNumber) || issueNumber < 1)
+      if (!Number.isSafeInteger(issueNumber) || issueNumber < 1) {
         throw new Error('INVALID_ISSUE_NUMBER');
+      }
       if (
         !team.initialIssues.some(
           (i) =>
             i.repository === entry.repository && i.issueNumber === issueNumber,
         )
-      )
-        team.initialIssues.push({ repository: entry.repository, issueNumber });
+      ) {
+        team.initialIssues.push({
+          repository: entry.repository,
+          issueNumber,
+        });
+      }
     }
-    if (entry.repository && !team.repositoryNames.includes(entry.repository))
+    if (entry.repository && !team.repositoryNames.includes(entry.repository)) {
       team.repositoryNames.push(entry.repository);
+    }
   }
   return [...teams.values()];
 }

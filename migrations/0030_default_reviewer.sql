@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS matrix_default_reviewers(repository_id INTEGER NOT NULL,pr_number INTEGER NOT NULL,reviewer TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING',lease_owner TEXT,lease_until INTEGER NOT NULL DEFAULT 0,last_error TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(repository_id,pr_number,reviewer));

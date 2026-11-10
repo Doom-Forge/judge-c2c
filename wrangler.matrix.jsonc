@@ -1,0 +1,180 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "doomforge-matrix",
+  "account_id": "2d8e86c5870a28947cb3eea1e20a8d86",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-04",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "html_handling": "none",
+    "directory": "public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1,
+    "logs": { "enabled": true, "invocation_logs": false },
+  },
+  "vars": {
+    "ENVIRONMENT": "production",
+    "MATRIX_MODE": "true",
+    "MATRIX_START_LIMIT": "80",
+    "CORS_ALLOWED_ORIGINS": "https://doomforge-arena.technical-vitc.workers.dev,https://doombot.180dcvitc.org",
+    "DEMO_MODE": "false",
+    "PREVIEW_TESTING": "false",
+    "ORG_NAME": "Doom-Forge",
+    "USE_DOOMFORGE_ORG": "true",
+    "USE_180DC_ORG": "false",
+    "ORG_VAULT_AAD": "judge-c2c:180DC-VIT-CHENNAI",
+    "ORG_KEY_CONTEXT": "180DC-VIT-CHENNAI",
+    "PUBLIC_ORIGIN": "https://doombot.180dcvitc.org",
+    "ORG_PUBLIC_ORIGIN": "https://doombot.180dcvitc.org",
+    "ORG_REVIEW_ORIGINS": "https://doomforge-matrix.technical-vitc.workers.dev",
+    "RUNNER_ENABLED": "false",
+    "MATRIX_IMAGE_URI": "registry.cloudflare.com/2d8e86c5870a28947cb3eea1e20a8d86/doomforge-matrix@sha256:1b4bf5c07118c1f435c28dcf6aa4a6a23bc251b5523faca42b3903e019b94e16",
+    "MATRIX_DIAGNOSTIC_IMAGE_URI": "registry.cloudflare.com/2d8e86c5870a28947cb3eea1e20a8d86/doomforge-matrix@sha256:46e1e055cad7e4424be6461c9bb146aaef339f79445e0251f21051600b4dd56f",
+    "DEFAULT_PR_REVIEWER": "Kevin272-dot",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "doomforge-matrix-evaluations",
+      "database_id": "5f4eddca-7b35-4be5-970d-fd6662dec551",
+      "migrations_dir": "migrations",
+    },
+    {
+      "binding": "ORG_DB",
+      "database_name": "doomforge-matrix-organization",
+      "database_id": "ef2b57b3-edf2-452b-a635-1d8b558b1385",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACTS",
+      "bucket_name": "doomforge-analysis-documents",
+    },
+  ],
+  "services": [
+    {
+      "binding": "ARENA_SERVICE",
+      "service": "doomforge-arena",
+    },
+    {
+      "binding": "TEAM_EMAIL_SENDER",
+      "service": "doombot-spacemail-sender",
+    },
+  ],
+  "workflows": [
+    {
+      "binding": "MATRIX_EVALUATOR",
+      "name": "doomforge-matrix-evaluator",
+      "class_name": "MatrixEvaluationWorkflow",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NOYYAL_MATRIX",
+        "class_name": "NoyyalMatrixRunner",
+      },
+      {
+        "name": "RASOI_MATRIX",
+        "class_name": "RasoiMatrixRunner",
+      },
+      {
+        "name": "MAZHAI_COVER_MATRIX",
+        "class_name": "MazhaiCoverMatrixRunner",
+      },
+      {
+        "name": "PRICINGPULSE_MATRIX",
+        "class_name": "PricingPulseMatrixRunner",
+      },
+      {
+        "name": "VEERA_FOOTWEAR_MATRIX",
+        "class_name": "VeeraFootwearMatrixRunner",
+      },
+      {
+        "name": "JANUS_MATRIX",
+        "class_name": "JanusMatrixRunner",
+      },
+    ],
+  },
+  "containers": [
+    {
+      "class_name": "NoyyalMatrixRunner",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "image": "registry.cloudflare.com/2d8e86c5870a28947cb3eea1e20a8d86/doomforge-matrix@sha256:1b4bf5c07118c1f435c28dcf6aa4a6a23bc251b5523faca42b3903e019b94e16",
+        },
+      },
+    },
+    {
+      "class_name": "RasoiMatrixRunner",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "image": "registry.cloudflare.com/2d8e86c5870a28947cb3eea1e20a8d86/doomforge-matrix@sha256:1b4bf5c07118c1f435c28dcf6aa4a6a23bc251b5523faca42b3903e019b94e16",
+        },
+      },
+    },
+    {
+      "class_name": "MazhaiCoverMatrixRunner",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "image": "registry.cloudflare.com/2d8e86c5870a28947cb3eea1e20a8d86/doomforge-matrix@sha256:46e1e055cad7e4424be6461c9bb146aaef339f79445e0251f21051600b4dd56f",
+        },
+      },
+    },
+    {
+      "class_name": "PricingPulseMatrixRunner",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "image": "registry.cloudflare.com/2d8e86c5870a28947cb3eea1e20a8d86/doomforge-matrix@sha256:46e1e055cad7e4424be6461c9bb146aaef339f79445e0251f21051600b4dd56f",
+        },
+      },
+    },
+    {
+      "class_name": "VeeraFootwearMatrixRunner",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "image": "registry.cloudflare.com/2d8e86c5870a28947cb3eea1e20a8d86/doomforge-matrix@sha256:46e1e055cad7e4424be6461c9bb146aaef339f79445e0251f21051600b4dd56f",
+        },
+      },
+    },
+    {
+      "class_name": "JanusMatrixRunner",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "image": "registry.cloudflare.com/2d8e86c5870a28947cb3eea1e20a8d86/doomforge-matrix@sha256:46e1e055cad7e4424be6461c9bb146aaef339f79445e0251f21051600b4dd56f",
+        },
+      },
+    },
+  ],
+  "migrations": [
+    {
+      "tag": "matrix-v1",
+      "new_sqlite_classes": ["NoyyalMatrixRunner", "RasoiMatrixRunner"],
+    },
+    {
+      "tag": "matrix-v2",
+      "new_sqlite_classes": [
+        "MazhaiCoverMatrixRunner",
+        "PricingPulseMatrixRunner",
+        "VeeraFootwearMatrixRunner",
+        "JanusMatrixRunner",
+      ],
+    },
+  ],
+  "triggers": {
+    "crons": ["*/2 * * * *"],
+  },
+}

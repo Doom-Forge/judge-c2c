@@ -1,0 +1,9 @@
+ALTER TABLE matrix_submissions
+ADD COLUMN team_id TEXT REFERENCES teams(id);
+ALTER TABLE matrix_submissions
+ADD COLUMN author_id INTEGER;
+ALTER TABLE matrix_submissions
+ADD COLUMN author_login TEXT;
+ALTER TABLE matrix_submissions
+ADD COLUMN mapping_status TEXT NOT NULL DEFAULT 'MEMBER_NOT_REGISTERED'
+CHECK(mapping_status IN('MAPPED','MEMBER_NOT_REGISTERED','TRACK_NOT_SELECTED','TRACK_CONFLICT','TRACK_MISMATCH'));

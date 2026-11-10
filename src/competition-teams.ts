@@ -2,21 +2,22 @@ import { prepareAssignment } from './competition-issues';
 import { z } from 'zod';
 import { canonical } from './domain';
 import {
-  teamCreateSchema,
-  teamUpdateSchema,
+  type GitHubIdentity,
   memberSchema,
   parseTeamCSV,
-  type GitHubIdentity,
+  teamCreateSchema,
+  teamUpdateSchema,
 } from './competition-domain';
 import {
   auditStatement,
   competitionDB,
+  type CompetitionServices,
   eventSettings,
   selectedRepository,
   verifyIdentity,
-  type CompetitionServices,
 } from './competition-store';
 import type { Env } from './env';
+import { onboardingStatements } from './team-invitations';
 export async function createTeam(
   env: Env,
   services: CompetitionServices,
@@ -30,15 +31,43 @@ export async function createTeam(
   if (
     data.repositoryIds.length > settings.policy.maxRepositoriesPerTeam ||
     new Set(data.repositoryIds).size !== data.repositoryIds.length
-  )
+  ) {
     throw new Error('TEAM_REPOSITORY_LIMIT');
-  const client = await services.client(),
-    identities: GitHubIdentity[] = [];
-  for (const member of data.members)
-    identities.push(await verifyIdentity(client, member.githubLogin));
-  if (new Set(identities.map((i) => i.id)).size !== identities.length)
+  }
+  const linkedCount = data.members.filter((member) => member.githubLogin)
+      .length,
+    rosterOnly = linkedCount === 0;
+  if (linkedCount !== 0 && linkedCount !== data.members.length) {
+    throw new Error('IMPORT_MIXED_GITHUB_ROSTER');
+  }
+  if (
+    rosterOnly &&
+    (!data.leadEmail || data.members.some((member) => !member.email))
+  ) {
+    throw new Error('IMPORT_ROSTER_EMAILS_REQUIRED');
+  }
+  const emails = data.members.flatMap((member) =>
+    member.email ? [member.email.trim().toLowerCase()] : []
+  );
+  if (new Set(emails).size !== emails.length) {
+    throw new Error('DUPLICATE_MEMBER_EMAIL');
+  }
+  const identities: (GitHubIdentity | null)[] = [];
+  if (!rosterOnly) {
+    const client = await services.client();
+    for (const member of data.members) {
+      identities.push(await verifyIdentity(client, member.githubLogin!));
+    }
+  } else {
+    for (const _member of data.members) identities.push(null);
+  }
+  if (
+    identities.filter((identity): identity is GitHubIdentity => identity !== null)
+      .some((identity, index, linked) => linked.findIndex((other) => other.id === identity.id) !== index)
+  ) {
     throw new Error('DUPLICATE_GITHUB_IDENTITY');
-  for (const identity of identities) {
+  }
+  for (const identity of identities.filter((value): value is GitHubIdentity => value !== null)) {
     const conflict = await db
       .prepare(
         "SELECT team_id FROM team_members WHERE hackathon_id='initial' AND github_id=? AND active=1",
@@ -47,6 +76,15 @@ export async function createTeam(
       .first();
     if (conflict) throw new Error('GITHUB_IDENTITY_ALREADY_ASSIGNED');
   }
+  for (const email of emails) {
+    const conflict = await db
+      .prepare(
+        "SELECT team_id FROM team_members WHERE hackathon_id='initial' AND lower(trim(email))=? AND active=1 UNION ALL SELECT team_id FROM team_roster_members WHERE hackathon_id='initial' AND lower(trim(email))=? AND active=1 LIMIT 1",
+      )
+      .bind(email, email)
+      .first();
+    if (conflict) throw new Error('MEMBER_EMAIL_ALREADY_ASSIGNED');
+  }
   for (const id of data.repositoryIds) await selectedRepository(env, id);
   const id = 'team-' + crypto.randomUUID(),
     team = {
@@ -54,8 +92,8 @@ export async function createTeam(
       ...data,
       members: data.members.map((m, i) => ({
         ...m,
-        githubId: identities[i]!.id,
-        githubLogin: identities[i]!.login,
+        githubId: identities[i]?.id ?? null,
+        githubLogin: identities[i]?.login ?? null,
       })),
     };
   if (commit) await db.batch(teamInsertStatements(env, actor, team));
@@ -67,27 +105,79 @@ export function teamInsertStatements(
   team: Awaited<ReturnType<typeof createTeam>>,
 ) {
   const db = competitionDB(env);
+  const leadEmail = team.leadEmail?.trim().toLowerCase() ?? null;
+  const leadIsInRoster = !!leadEmail && team.members.some(
+    (member) => member.email?.trim().toLowerCase() === leadEmail,
+  );
   return [
     db
       .prepare(
-        "INSERT INTO teams(id,name,hackathon_id,status,metadata,registration_source,created_at,updated_at) VALUES(?,?,'initial',?,?,'organizer',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+        "INSERT INTO teams(id,name,hackathon_id,status,metadata,registration_source,lead_email,created_at,updated_at) VALUES(?,?,'initial',?,?,'organizer',?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
       )
-      .bind(team.id, team.name, team.status, canonical(team.metadata)),
-    ...team.members.map((m) =>
-      db
-        .prepare(
-          "INSERT INTO team_members(id,team_id,hackathon_id,github_id,github_login,display_name,email,external_id) VALUES(?,?,'initial',?,?,?,?,?)",
-        )
-        .bind(
-          'member-' + crypto.randomUUID(),
-          team.id,
-          m.githubId,
-          m.githubLogin,
-          m.displayName,
-          m.email ?? null,
-          m.externalId ?? null,
-        ),
-    ),
+      .bind(
+        team.id,
+        team.name,
+        team.status,
+        canonical(team.metadata),
+        team.leadEmail ?? null,
+      ),
+    ...team.members.flatMap((m) => {
+      const memberId = 'member-' + crypto.randomUUID();
+      if (typeof m.githubId === 'number' && m.githubLogin) {
+        return [
+          db
+            .prepare(
+              "INSERT INTO team_members(id,team_id,hackathon_id,github_id,github_login,display_name,email,external_id) VALUES(?,?,'initial',?,?,?,?,?)",
+            )
+            .bind(
+              memberId,
+              team.id,
+              m.githubId,
+              m.githubLogin,
+              m.displayName,
+              m.email ?? null,
+              m.externalId ?? null,
+            ),
+          ...(m.email
+            ? [
+                db
+                  .prepare(
+                    "INSERT INTO team_roster_members(id,team_id,hackathon_id,display_name,email,external_id,linked_team_member_id) VALUES(?,?,'initial',?,?,?,?)",
+                  )
+                  .bind(
+                    'roster-' + crypto.randomUUID(),
+                    team.id,
+                    m.displayName,
+                    m.email.trim().toLowerCase(),
+                    m.externalId ?? null,
+                    memberId,
+                  ),
+              ]
+            : []),
+        ];
+      }
+      if (!m.email) throw new Error('IMPORT_ROSTER_EMAILS_REQUIRED');
+      return [
+        db
+          .prepare(
+            "INSERT INTO team_roster_members(id,team_id,hackathon_id,display_name,email,external_id) VALUES(?,?,'initial',?,?,?)",
+          )
+          .bind(
+            'roster-' + crypto.randomUUID(),
+            team.id,
+            m.displayName,
+            m.email.trim().toLowerCase(),
+            m.externalId ?? null,
+          ),
+      ];
+    }),
+    ...(leadEmail && !leadIsInRoster
+      ? [
+          db.prepare(
+            "INSERT INTO team_roster_members(id,team_id,hackathon_id,display_name,email) VALUES(?,?,'initial','Team Lead',?)",
+          ).bind('roster-' + crypto.randomUUID(), team.id, leadEmail),
+        ]
+      : []),
     ...team.repositoryIds.map((repositoryId) =>
       db
         .prepare(
@@ -150,6 +240,7 @@ export async function addMember(
       .bind(teamId)
       .first();
   if (!team) throw new Error('TEAM_NOT_FOUND');
+  if (!member.githubLogin) throw new Error('GITHUB_LOGIN_REQUIRED');
   const identity = await verifyIdentity(
       await services.client(),
       member.githubLogin,
@@ -233,8 +324,9 @@ export async function assignRepository(
   await selectedRepository(env, repositoryId);
   if (
     !(await db.prepare('SELECT id FROM teams WHERE id=?').bind(teamId).first())
-  )
+  ) {
     throw new Error('TEAM_NOT_FOUND');
+  }
   if (
     remove &&
     (await db
@@ -243,8 +335,9 @@ export async function assignRepository(
       )
       .bind(teamId, repositoryId)
       .first())
-  )
+  ) {
     throw new Error('ACTIVE_ISSUE_ASSIGNMENTS_REQUIRE_REVOCATION');
+  }
   const operation = remove
     ? db
         .prepare(
@@ -297,8 +390,11 @@ export async function importTeams(
     db = competitionDB(env);
   const parsed = data.csv ? parseTeamCSV(data.csv) : data.teams!;
   const prepared: Awaited<ReturnType<typeof createTeam>>[] = [],
-    issues: { teamId: string; repositoryId: number; issueNumber: number }[] =
-      [];
+    issues: {
+      teamId: string;
+      repositoryId: number;
+      issueNumber: number;
+    }[] = [];
   for (const input of parsed) {
     const teamInput = { ...input };
     if ('initialIssues' in teamInput) {
@@ -319,7 +415,10 @@ export async function importTeams(
       });
       const initial = (
         teamInput as unknown as {
-          initialIssues: { repository: string; issueNumber: number }[];
+          initialIssues: {
+            repository: string;
+            issueNumber: number;
+          }[];
         }
       ).initialIssues;
       delete (teamInput as Record<string, unknown>).initialIssues;
@@ -328,7 +427,9 @@ export async function importTeams(
         const repository = repositories.results.find(
           (r) => r.full_name.toLowerCase() === issue.repository.toLowerCase(),
         );
-        if (!repository) throw new Error('IMPORT_REPOSITORY_NOT_INSTALLED');
+        if (!repository) {
+          throw new Error('IMPORT_REPOSITORY_NOT_INSTALLED');
+        }
         issues.push({
           teamId: '',
           repositoryId: repository.id,
@@ -343,29 +444,48 @@ export async function importTeams(
         )
         .bind(input.name)
         .first()
-    )
+    ) {
       throw new Error('IMPORT_TEAM_NAME_ALREADY_EXISTS');
+    }
     const team = await createTeam(env, services, actor, teamInput, false);
-    for (const issue of issues.filter((x) => !x.teamId)) issue.teamId = team.id;
+    for (const issue of issues.filter((x) => !x.teamId)) {
+      issue.teamId = team.id;
+    }
     prepared.push(team);
   }
-  const identities = prepared.flatMap((t) => t.members.map((m) => m.githubId));
-  if (new Set(identities).size !== identities.length)
+  const identities = prepared
+    .flatMap((t) => t.members.map((m) => m.githubId))
+    .filter((id): id is number => typeof id === 'number');
+  if (new Set(identities).size !== identities.length) {
     throw new Error('IMPORT_CONFLICTING_GITHUB_IDENTITIES');
+  }
+  const importedEmails = prepared
+    .flatMap((team) => team.members.map((member) => member.email?.toLowerCase()))
+    .filter((email): email is string => Boolean(email));
+  if (new Set(importedEmails).size !== importedEmails.length) {
+    throw new Error('IMPORT_CONFLICTING_MEMBER_EMAILS');
+  }
   const initialStatements: D1PreparedStatement[] = [];
   for (const issue of issues) {
-    if (prepared.find((t) => t.id === issue.teamId)?.status !== 'ACTIVE')
+    if (prepared.find((t) => t.id === issue.teamId)?.status !== 'ACTIVE') {
       throw new Error('IMPORT_INITIAL_ISSUES_REQUIRE_ACTIVE_APPROVED_TEAMS');
+    }
     const assignment = await prepareAssignment(env, actor, issue, 'IMPORT');
     initialStatements.push(...assignment.statements);
   }
-  if (data.commit)
+  if (data.commit) {
     await db.batch([
       ...prepared.flatMap((team) => teamInsertStatements(env, actor, team)),
+      ...(
+        await Promise.all(
+          prepared.map((team) => onboardingStatements(env, team)),
+        )
+      ).flat(),
       ...initialStatements,
       auditStatement(env, actor, 'teams.imported', 'initial', null, {
         teamIds: prepared.map((t) => t.id),
       }),
     ]);
+  }
   return { dryRun: !data.commit, teams: prepared };
 }

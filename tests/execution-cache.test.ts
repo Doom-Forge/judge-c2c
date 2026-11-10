@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './miniflare';
 import { migrate } from './database';
 import { canonical, digest, type Contract } from '../src/domain';
 import { demoContract } from '../src/demo';

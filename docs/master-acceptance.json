@@ -55,12 +55,12 @@
           "status": "PASS",
           "evidence": [
             "scripts/production-config.mjs",
-            ".github/workflows/deploy.yml",
+            "https://github.com/daksh1403/judge-c2c/blob/c0bfcf316ba047ee53f02872c9e8dead9498e509/.github/workflows/deploy.yml",
             "docs/qa/current-approved-main-production-deployment.json",
             "docs/qa/current-live-environment-isolation.json",
             "docs/qa/current-deployed-environment-bindings.json"
           ],
-          "note": "Approved main commit was deployed successfully by authenticated Wrangler to a separate production Worker. Actual production frontend login and isolated runner canary passed. AI quota exhaustion is shown explicitly; production App onboarding remains required. This verifies deployment, not a completed production hackathon.",
+          "note": "Approved main commit was deployed successfully by authenticated Wrangler to a separate production Worker. Actual production frontend login and isolated runner canary passed. AI quota exhaustion is shown explicitly; production App onboarding remains required. This verifies deployment, not a completed production hackathon. Historical GitHub Actions evidence is retained at an immutable commit; Actions were removed at owner request on 2026-11-04. The current Doomforge pilot deploys through Wrangler.",
           "verification": {
             "method": "LIVE_INTEGRATION",
             "boundary": "Actual approved-main deployment, production frontend diagnostics, authenticated binding inventory and cross-environment frontend login denials. Does not certify production participant evaluation, AI availability, event capacity or managed availability."
@@ -79,11 +79,11 @@
           "status": "PASS",
           "evidence": [
             "AGENTS.md",
-            ".github/workflows/ci.yml",
-            ".github/workflows/deploy.yml",
+            "https://github.com/daksh1403/judge-c2c/blob/c0bfcf316ba047ee53f02872c9e8dead9498e509/.github/workflows/ci.yml",
+            "https://github.com/daksh1403/judge-c2c/blob/c0bfcf316ba047ee53f02872c9e8dead9498e509/.github/workflows/deploy.yml",
             "docs/qa/current-branch-governance.json"
           ],
-          "note": "Authenticated live PR6 remains open on feat/evaluation-completeness targeting default main. Current feature work stays on this branch; production workflow requires main push and protected explicit enablement. No merge or feature push to main performed.",
+          "note": "Authenticated live PR6 remains open on feat/evaluation-completeness targeting default main. Current feature work stays on this branch; production workflow requires main push and protected explicit enablement. No merge or feature push to main performed. Historical GitHub Actions evidence is retained at an immutable commit; Actions were removed at owner request on 2026-11-04. The current Doomforge pilot deploys through Wrangler.",
           "verification": {
             "method": "LIVE_INTEGRATION",
             "boundary": "Current live GitHub branch/PR/check evidence and gated workflow; does not certify future privileged-actor behavior or production deployment."
@@ -102,11 +102,11 @@
           "status": "PASS",
           "evidence": [
             "AGENTS.md",
-            ".github/workflows/ci.yml",
-            ".github/workflows/deploy.yml",
+            "https://github.com/daksh1403/judge-c2c/blob/c0bfcf316ba047ee53f02872c9e8dead9498e509/.github/workflows/ci.yml",
+            "https://github.com/daksh1403/judge-c2c/blob/c0bfcf316ba047ee53f02872c9e8dead9498e509/.github/workflows/deploy.yml",
             "docs/qa/current-branch-governance.json"
           ],
-          "note": "Authenticated live PR6 remains open on feat/evaluation-completeness targeting default main. Current feature work stays on this branch; production workflow requires main push and protected explicit enablement. No merge or feature push to main performed.",
+          "note": "Authenticated live PR6 remains open on feat/evaluation-completeness targeting default main. Current feature work stays on this branch; production workflow requires main push and protected explicit enablement. No merge or feature push to main performed. Historical GitHub Actions evidence is retained at an immutable commit; Actions were removed at owner request on 2026-11-04. The current Doomforge pilot deploys through Wrangler.",
           "verification": {
             "method": "LIVE_INTEGRATION",
             "boundary": "Current live GitHub branch/PR/check evidence and gated workflow; does not certify future privileged-actor behavior or production deployment."
@@ -250,15 +250,15 @@
           "requirement": "Local preview production separation",
           "status": "PASS",
           "evidence": [
-            ".github/workflows/ci.yml",
-            ".github/workflows/deploy.yml",
+            "https://github.com/daksh1403/judge-c2c/blob/c0bfcf316ba047ee53f02872c9e8dead9498e509/.github/workflows/ci.yml",
+            "https://github.com/daksh1403/judge-c2c/blob/c0bfcf316ba047ee53f02872c9e8dead9498e509/.github/workflows/deploy.yml",
             "scripts/preview-config.mjs",
             "scripts/production-config.mjs",
             "docs/qa/current-production-prerequisites.md",
             "docs/qa/current-live-environment-isolation.json",
             "docs/qa/current-deployed-environment-bindings.json"
           ],
-          "note": "Live Cloudflare production Worker uses separately migrated D1 databases, separate KV and fresh secrets. Native frontend and its preview delegate only to review. Actual frontend denied review credentials on production and production credentials on review/main and branch preview. Authenticated deployed binding metadata confirms disjoint D1/KV and no native production service binding. Owner selected tunnel/Workers.dev and KV only; this verifies environment separation, not event capacity or functional production AI.",
+          "note": "Live Cloudflare production Worker uses separately migrated D1 databases, separate KV and fresh secrets. Native frontend and its preview delegate only to review. Actual frontend denied review credentials on production and production credentials on review/main and branch preview. Authenticated deployed binding metadata confirms disjoint D1/KV and no native production service binding. Owner selected tunnel/Workers.dev and KV only; this verifies environment separation, not event capacity or functional production AI. Historical GitHub Actions evidence is retained at an immutable commit; Actions were removed at owner request on 2026-11-04. The current Doomforge pilot deploys through Wrangler.",
           "verification": {
             "method": "LIVE_INTEGRATION",
             "boundary": "Deployed production/review resource metadata and three actual frontend cross-environment login denials, supplemented by existing local/preview configuration guards. Production AI quota, App onboarding and event capacity remain separate gaps."
@@ -300,12 +300,12 @@
           "status": "PASS",
           "evidence": [
             "AGENTS.md",
-            ".github/workflows/ci.yml",
-            ".github/workflows/deploy.yml",
+            "https://github.com/daksh1403/judge-c2c/blob/c0bfcf316ba047ee53f02872c9e8dead9498e509/.github/workflows/ci.yml",
+            "https://github.com/daksh1403/judge-c2c/blob/c0bfcf316ba047ee53f02872c9e8dead9498e509/.github/workflows/deploy.yml",
             "https://github.com/daksh1403/judge-c2c/actions/runs/37186633708",
             "docs/qa/current-stabilization-runtime.md"
           ],
-          "note": "Fresh authenticated GitHubCI checkout on7c688d2 completed pinned npmci, npmcheck, dependency audits, trustedDocker build and all browser checks. NativeCloudflare build and deployed judge views passed. This verifies the review development setup, not production provisioning.",
+          "note": "Fresh authenticated GitHubCI checkout on7c688d2 completed pinned npmci, npmcheck, dependency audits, trustedDocker build and all browser checks. NativeCloudflare build and deployed judge views passed. This verifies the review development setup, not production provisioning. Historical GitHub Actions evidence is retained at an immutable commit; Actions were removed at owner request on 2026-11-04. The current Doomforge pilot deploys through Wrangler.",
           "verification": {
             "method": "LIVE_INTEGRATION",
             "boundary": "Actual isolated review API/model/GitHub/D1 and judge Preview evidence, plus controlled focused fixtures; production is not certified."
@@ -550,8 +550,10 @@
           "id": "02.11",
           "requirement": "Approved main merge deploys production",
           "status": "BLOCKED",
-          "evidence": [".github/workflows/deploy.yml"],
-          "note": "Approved main was deployed manually with authenticated Wrangler. Protected CI deployment remains disabled until a separately scoped Cloudflare API token is configured in cloudflare-production; manual deployment does not prove the gated CI path.",
+          "evidence": [
+            "https://github.com/daksh1403/judge-c2c/blob/c0bfcf316ba047ee53f02872c9e8dead9498e509/.github/workflows/deploy.yml"
+          ],
+          "note": "Approved main was deployed manually with authenticated Wrangler. Protected CI deployment remains disabled until a separately scoped Cloudflare API token is configured in cloudflare-production; manual deployment does not prove the gated CI path. Historical GitHub Actions evidence is retained at an immutable commit; Actions were removed at owner request on 2026-11-04. The current Doomforge pilot deploys through Wrangler.",
           "verification": {
             "method": "SOURCE_INSPECTION",
             "boundary": "Supported application profile only; this does not attest production operation or every participant workflow."
@@ -6044,7 +6046,7 @@
             "docs/local-docker-runner.md",
             "docs/qa/current-production-prerequisites.md"
           ],
-          "note": "Production owner-tunnel runner canary and guest isolation profile are verified. The complete production GitHub App \u2192 participant PR \u2192 sandbox/evidence trust boundary awaits fresh App setup and actual production PR evaluation; this is not blocked by merge authorization.",
+          "note": "Production owner-tunnel runner canary and guest isolation profile are verified. The complete production GitHub App → participant PR → sandbox/evidence trust boundary awaits fresh App setup and actual production PR evaluation; this is not blocked by merge authorization.",
           "verification": {
             "method": "FIXTURE_TEST",
             "boundary": "Production configuration isolation fixtures and isolated review operation only; actual production runtime and resource/secret boundary verification require authorized provisioning/deployment."
@@ -6054,7 +6056,7 @@
           "relatedPR": null,
           "lastValidationState": {
             "status": "BLOCKED",
-            "basis": "Production owner-tunnel runner canary and guest isolation profile are verified. The complete production GitHub App \u2192 participant PR \u2192 sandbox/evidence trust boundary awaits fresh App setup and actual production PR evaluation; this is not blocked by merge authorization."
+            "basis": "Production owner-tunnel runner canary and guest isolation profile are verified. The complete production GitHub App → participant PR → sandbox/evidence trust boundary awaits fresh App setup and actual production PR evaluation; this is not blocked by merge authorization."
           }
         },
         {
@@ -16189,7 +16191,7 @@
             "docs/qa/docker-evidence.json",
             "docs/qa/current-production-prerequisites.md"
           ],
-          "note": "Production signed runner canary passed with isolated baseline FAIL \u2192 canary PASS; original PR calibrations passed in isolated review. Actual production participant PR/objective execution awaits fresh production GitHub App setup. Cloudflare AI quota is exhausted and remains explicitly UNVERIFIED.",
+          "note": "Production signed runner canary passed with isolated baseline FAIL → canary PASS; original PR calibrations passed in isolated review. Actual production participant PR/objective execution awaits fresh production GitHub App setup. Cloudflare AI quota is exhausted and remains explicitly UNVERIFIED.",
           "verification": {
             "method": "FIXTURE_TEST",
             "boundary": "Production configuration isolation fixtures and isolated review operation only; actual production runtime and resource/secret boundary verification require authorized provisioning/deployment."
@@ -16199,7 +16201,7 @@
           "relatedPR": null,
           "lastValidationState": {
             "status": "BLOCKED",
-            "basis": "Production signed runner canary passed with isolated baseline FAIL \u2192 canary PASS; original PR calibrations passed in isolated review. Actual production participant PR/objective execution awaits fresh production GitHub App setup. Cloudflare AI quota is exhausted and remains explicitly UNVERIFIED."
+            "basis": "Production signed runner canary passed with isolated baseline FAIL → canary PASS; original PR calibrations passed in isolated review. Actual production participant PR/objective execution awaits fresh production GitHub App setup. Cloudflare AI quota is exhausted and remains explicitly UNVERIFIED."
           }
         },
         {

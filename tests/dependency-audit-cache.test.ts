@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Miniflare } from 'miniflare';
+import { Miniflare } from './miniflare';
 import { migrate } from './database';
 import { cachedDependencyAudit } from '../src/dependency-audit-cache';
 import { digest } from '../src/domain';
