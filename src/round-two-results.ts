@@ -3,6 +3,7 @@ import { boundedBody } from "./security";
 import type { ConsoleSession } from "./console-identities";
 import type { Env } from "./env";
 import { calculateTeamScore } from "./round-two-scoring";
+import { competitionRepositoriesFor } from "./organization-selection";
 
 const json = (value: unknown, status = 200) =>
 	Response.json(value, {
@@ -103,7 +104,8 @@ function fitTeamFeedback(
 	};
 }
 
-async function aggregateResults(db: D1Database) {
+async function aggregateResults(db: D1Database, env: Env) {
+	const activeTracks = competitionRepositoriesFor(env);
 	const [teams, reviews, repositories, finalScores, unverifiedPullRequests] = await db.batch([
 		db
 			.prepare(
@@ -115,14 +117,14 @@ async function aggregateResults(db: D1Database) {
 			),
 		db
 			.prepare(
-				"SELECT tr.team_id,tr.repository_id,r.full_name FROM team_repositories tr JOIN github_repositories r ON r.id=tr.repository_id WHERE tr.active=1",
-			),
+				"SELECT tr.team_id,current.id AS repository_id,current.full_name FROM team_repositories tr JOIN github_repositories selected ON selected.id=tr.repository_id JOIN github_repositories current ON current.accessible=1 AND current.full_name IN(?,?,?,?) AND substr(current.full_name,instr(current.full_name,'/'))=substr(selected.full_name,instr(selected.full_name,'/')) WHERE tr.active=1",
+			).bind(...activeTracks),
 		db.prepare(
 			"SELECT team_id,score,judge_identity_id,reason,created_at FROM round_two_team_final_scores",
 		),
 		db.prepare(
-			"SELECT team_id,count(*) AS pull_request_count FROM unverified_pr_submissions WHERE team_id IS NOT NULL GROUP BY team_id",
-		),
+			"SELECT u.team_id,count(*) AS pull_request_count FROM unverified_pr_submissions u JOIN github_repositories r ON r.id=u.repository_id WHERE u.team_id IS NOT NULL AND r.full_name IN(?,?,?,?) GROUP BY u.team_id",
+		).bind(...activeTracks),
 	]);
 	if (!teams || !reviews || !repositories || !finalScores || !unverifiedPullRequests) {
 		throw new Error("D1 batch returned incomplete result inputs");
@@ -275,11 +277,12 @@ async function aggregateResults(db: D1Database) {
 	};
 }
 
-async function finalScoreContext(db: D1Database, teamId: string) {
+async function finalScoreContext(db: D1Database, teamId: string, env: Env) {
+	const activeTracks = competitionRepositoriesFor(env);
 	const [team, reviews, prs, score] = await db.batch([
 		db.prepare("SELECT id,name FROM teams WHERE id=? AND hackathon_id='initial' AND status='ACTIVE'").bind(teamId),
-		db.prepare("SELECT stage,count(*) AS review_count,round(avg(score),1) AS average FROM round_two_review_submissions s WHERE s.team_id=? AND s.revision=(SELECT max(latest.revision) FROM round_two_review_submissions latest WHERE latest.team_id=s.team_id AND latest.judge_identity_id=s.judge_identity_id AND latest.stage=s.stage) GROUP BY stage").bind(teamId),
-		db.prepare("SELECT u.repository_id,u.pr_number,u.head_sha,u.author_login,u.github_updated_at,u.closed,r.full_name FROM unverified_pr_submissions u JOIN github_repositories r ON r.id=u.repository_id JOIN team_repositories tr ON tr.team_id=u.team_id AND tr.repository_id=u.repository_id AND tr.active=1 WHERE u.team_id=? ORDER BY u.github_updated_at DESC,u.repository_id,u.pr_number LIMIT 100").bind(teamId),
+		db.prepare("SELECT s.stage,count(*) AS review_count,round(avg(s.score),1) AS average FROM round_two_review_submissions s LEFT JOIN round_two_repository_rubric_versions rv ON rv.id=s.rubric_version_id WHERE s.team_id=? AND s.revision=(SELECT max(latest.revision) FROM round_two_review_submissions latest WHERE latest.team_id=s.team_id AND latest.judge_identity_id=s.judge_identity_id AND latest.stage=s.stage) AND (s.stage<>'ENGINEERING' OR EXISTS(SELECT 1 FROM team_repositories tr JOIN github_repositories selected ON selected.id=tr.repository_id JOIN github_repositories current ON current.id=rv.repository_id AND current.accessible=1 AND current.full_name IN(?,?,?,?) AND substr(current.full_name,instr(current.full_name,'/'))=substr(selected.full_name,instr(selected.full_name,'/')) WHERE tr.team_id=s.team_id AND tr.active=1)) GROUP BY s.stage").bind(teamId, ...activeTracks),
+		db.prepare("SELECT u.repository_id,u.pr_number,u.head_sha,u.author_login,u.github_updated_at,u.closed,r.full_name FROM unverified_pr_submissions u JOIN github_repositories r ON r.id=u.repository_id AND r.full_name IN(?,?,?,?) JOIN team_repositories tr ON tr.team_id=u.team_id AND tr.active=1 JOIN github_repositories selected ON selected.id=tr.repository_id AND substr(selected.full_name,instr(selected.full_name,'/'))=substr(r.full_name,instr(r.full_name,'/')) WHERE u.team_id=? ORDER BY u.github_updated_at DESC,u.repository_id,u.pr_number LIMIT 100").bind(...activeTracks, teamId),
 		db.prepare("SELECT team_id,score,judge_identity_id,reason,created_at FROM round_two_team_final_scores WHERE team_id=?").bind(teamId),
 	]);
 	if (!team || !reviews || !prs || !score) return null;
@@ -312,7 +315,7 @@ async function finalScoreContext(db: D1Database, teamId: string) {
 	};
 }
 
-async function explicitTeamFinalScore(request: Request, db: D1Database, session: ConsoleSession) {
+async function explicitTeamFinalScore(request: Request, db: D1Database, env: Env, session: ConsoleSession) {
 	const url = new URL(request.url);
 	if (request.method === "GET") {
 		if (session.role !== "judge" || !session.identity_id) return json({ error: "JUDGE_REQUIRED" }, 403);
@@ -320,7 +323,7 @@ async function explicitTeamFinalScore(request: Request, db: D1Database, session:
 		if (!teamId || teamId.length > 80) return json({ error: "INVALID_FINAL_SCORE_SCOPE" }, 400);
 		const assignment = await db.prepare("SELECT a.id FROM round_two_judge_assignments a JOIN teams t ON t.id=a.team_id WHERE a.judge_identity_id=? AND a.team_id=? AND a.revoked_at IS NULL AND t.status='ACTIVE' AND t.hackathon_id='initial'").bind(session.identity_id, teamId).first();
 		if (!assignment) return json({ error: "NOT_FOUND" }, 404);
-		const context = await finalScoreContext(db, teamId);
+		const context = await finalScoreContext(db, teamId, env);
 		return context ? json(context) : json({ error: "NOT_FOUND" }, 404);
 	}
 	if (request.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
@@ -330,7 +333,7 @@ async function explicitTeamFinalScore(request: Request, db: D1Database, session:
 	catch { return json({ error: "INVALID_INPUT" }, 400); }
 	const assignment = await db.prepare("SELECT a.id FROM round_two_judge_assignments a JOIN teams t ON t.id=a.team_id WHERE a.judge_identity_id=? AND a.team_id=? AND a.revoked_at IS NULL AND t.status='ACTIVE' AND t.hackathon_id='initial'").bind(session.identity_id, data.teamId).first();
 	if (!assignment) return json({ error: "NOT_FOUND" }, 404);
-	const context = await finalScoreContext(db, data.teamId);
+	const context = await finalScoreContext(db, data.teamId, env);
 	if (!context) return json({ error: "NOT_FOUND" }, 404);
 	if (context.finalScore) return json({ error: "FINAL_SCORE_ALREADY_SET", finalScore: context.finalScore }, 409);
 	if (!context.manualReviews.engineering.reviewCount) return json({ error: "ENGINEERING_REVIEW_REQUIRED" }, 409);
@@ -344,7 +347,7 @@ async function explicitTeamFinalScore(request: Request, db: D1Database, session:
 		db.prepare("INSERT INTO audit(action,entity,actor,changes) SELECT 'round_two.team_final_score.set',?,?,? WHERE changes()=1").bind(data.teamId, actor, JSON.stringify({ score: data.score, reason: data.reason, evidenceSummary })),
 	]);
 	if (!changes[0]?.meta.changes) {
-		const latest = await finalScoreContext(db, data.teamId);
+		const latest = await finalScoreContext(db, data.teamId, env);
 		return latest?.finalScore ? json({ error: "FINAL_SCORE_ALREADY_SET", finalScore: latest.finalScore }, 409) : json({ error: "ENGINEERING_REVIEW_REQUIRED" }, 409);
 	}
 	return json({ teamId: data.teamId, finalScore: { score: data.score, judgeIdentityId: session.identity_id, reason: data.reason, createdAt: new Date().toISOString() } }, 201);
@@ -402,6 +405,7 @@ async function frozenSnapshot(db: D1Database) {
 async function createSnapshot(
 	request: Request,
 	db: D1Database,
+	env: Env,
 	session: ConsoleSession,
 ) {
 	let data: z.infer<typeof snapshotInput>;
@@ -414,7 +418,7 @@ async function createSnapshot(
 	} catch {
 		return json({ error: "INVALID_INPUT" }, 400);
 	}
-	const results = await aggregateResults(db);
+	const results = await aggregateResults(db, env);
 	if (results.pending > 0) return json({ error: "FINAL_SCORES_REQUIRED", pendingTeams: results.pending }, 409);
 	const ready = results.results
 			.filter((result) =>
@@ -646,6 +650,7 @@ async function setPublication(
 async function setFreeze(
 	request: Request,
 	db: D1Database,
+	env: Env,
 	session: ConsoleSession,
 	freeze: boolean,
 ) {
@@ -671,7 +676,7 @@ async function setFreeze(
 	if (!freeze && !current) return json({ error: "RESULTS_NOT_FROZEN" }, 409);
 	let snapshotId: string;
 	if (freeze) {
-		const results = await aggregateResults(db);
+		const results = await aggregateResults(db, env);
 		if (results.pending > 0) return json({ error: "FINAL_SCORES_REQUIRED", pendingTeams: results.pending }, 409);
 		const ready = results.results
 				.filter((result) =>
@@ -755,7 +760,7 @@ export async function roundTwoResults(
 	const db = env.ORG_DB;
 	if (!db) return json({ error: "ORGANIZATION_NOT_CONFIGURED" }, 503);
 	const path = new URL(request.url).pathname;
-	if (path.endsWith("/results/final-score")) return explicitTeamFinalScore(request, db, session);
+	if (path.endsWith("/results/final-score")) return explicitTeamFinalScore(request, db, env, session);
 	if (session.role !== "organizer") {
 		return json({ error: "ORGANIZER_REQUIRED" }, 403);
 	}
@@ -771,7 +776,7 @@ export async function roundTwoResults(
 	if (path.endsWith("/results/snapshots")) {
 		if (request.method === "GET") return listSnapshots(db);
 		if (request.method === "POST") {
-			return createSnapshot(request, db, session);
+			return createSnapshot(request, db, env, session);
 		}
 		return json({ error: "METHOD_NOT_ALLOWED" }, 405);
 	}
@@ -786,10 +791,10 @@ export async function roundTwoResults(
 	}
 	if (path.endsWith("/results/freeze")) {
 		if (request.method === "POST") {
-			return setFreeze(request, db, session, true);
+			return setFreeze(request, db, env, session, true);
 		}
 		if (request.method === "DELETE") {
-			return setFreeze(request, db, session, false);
+			return setFreeze(request, db, env, session, false);
 		}
 		return json({ error: "METHOD_NOT_ALLOWED" }, 405);
 	}
@@ -805,7 +810,7 @@ export async function roundTwoResults(
 			publication: await publication(db),
 		})
 		: json({
-			...(await aggregateResults(db)),
+			...(await aggregateResults(db, env)),
 			frozen: false,
 			freeze: null,
 			publication: await publication(db),

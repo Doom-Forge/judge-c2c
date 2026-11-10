@@ -1,14 +1,16 @@
 import matrices from '../matrix-runner/matrices.json';
+import type { Env } from './env';
 import { scoreMatrix, type MatrixCheck } from './matrix';
+import { activeOrganization } from './organization-selection';
 
-type PreviewEnv = { ASSETS: Fetcher };
+type PreviewEnv = Pick<Env, 'ASSETS' | 'ORG_NAME' | 'USE_DOOMFORGE_ORG' | 'USE_180DC_ORG'>;
 const syntheticNotice =
   'SYNTHETIC PREVIEW · Public demo credential: preview. Generated fixtures only; no participant code or containers were executed.';
 
-export async function previewFixtures() {
+export async function previewFixtures(organization = 'Doom-Forge') {
   const repositories = Object.keys(matrices).map((name, index) => ({
     id: `synthetic-repository-${index + 1}`,
-    full_name: `Doom-Forge/${name}`,
+    full_name: `${organization}/${name}`,
   }));
   const runs = [];
   for (const [index, [name, matrix]] of Object.entries(matrices).entries()) {
@@ -50,7 +52,7 @@ export async function previewFixtures() {
       runs.push({
         id: (index * 3 + attempt + 1).toString(16).padStart(64, '0'),
         repository_id: repositories[index]!.id,
-        full_name: `Doom-Forge/${name}`,
+        full_name: `${organization}/${name}`,
         pr_number: attempt + 1,
         head_sha: 'a'.repeat(40),
         baseline_sha: 'b'.repeat(40),
@@ -98,7 +100,7 @@ export default {
           { error: 'READ_ONLY_SYNTHETIC_PREVIEW', notice: syntheticNotice },
           405,
         );
-      const fixtures = await previewFixtures();
+      const fixtures = await previewFixtures(activeOrganization(env as Env));
       if (url.pathname === '/api/matrix/overview') return json(fixtures);
       const match = /^\/api\/matrix\/runs\/([a-f0-9]{64})$/.exec(url.pathname);
       const run = match && fixtures.runs.find((item) => item.id === match[1]);

@@ -1,4 +1,5 @@
 import type { Env } from './env';
+import { activeOrganization } from './organization-selection';
 import { z } from 'zod';
 
 const repositories = ['mazhai-cover', 'pricingpulse', 'veera-footwear', 'janus'] as const;
@@ -24,7 +25,8 @@ export class DiagnosticSourceError extends Error {
   }
 }
 
-export async function readDiagnosticSources(raw: unknown): Promise<Record<(typeof repositories)[number], DiagnosticSource>> {
+export async function readDiagnosticSources(raw: unknown, organization = 'Doom-Forge'): Promise<Record<(typeof repositories)[number], DiagnosticSource>> {
+  if (!/^[A-Za-z0-9-]{1,39}$/.test(organization)) throw new Error('ORGANIZATION_SELECTION_INVALID');
   const commits = commitsSchema.parse(raw);
   const sources = {} as Record<(typeof repositories)[number], DiagnosticSource>;
   for (const repository of repositories) {
@@ -32,7 +34,7 @@ export async function readDiagnosticSources(raw: unknown): Promise<Record<(typeo
     let response: Response;
     try {
       response = await fetch(
-        `https://raw.githubusercontent.com/Doom-Forge/${repository}/${sha}/src/diagnostic.py`,
+        `https://raw.githubusercontent.com/${organization}/${repository}/${sha}/src/diagnostic.py`,
         {
           redirect: 'manual',
           headers: { 'User-Agent': 'Doomforge-Matrix-Diagnostic', Accept: 'text/plain' },

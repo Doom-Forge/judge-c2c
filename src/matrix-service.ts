@@ -6,9 +6,9 @@ import { boundedBody, equalSecret } from "./security";
 import {
 	matrixRepositoryStatus,
 	githubEvidenceCategories,
-	specificationRequiredRepositories,
 } from "./matrix";
 import { organizationEnv } from "./organization";
+import { activeOrganization, competitionOwner, competitionRepositories, hasOrganizationSelection } from "./organization-selection";
 import { GitHub } from "./github";
 import type { Contract } from "./domain";
 import type { Env } from "./env";
@@ -54,6 +54,7 @@ const eventSchema = z.object({
 const json = (value: unknown, status = 200) =>
 	Response.json(value, { status, headers: { "cache-control": "no-store" } });
 const dbFor = (env: Env) => env.ORG_DB ?? env.DB;
+const allowedRepositories = (env: Env) => competitionRepositories(competitionOwner(env));
 type ReviewerRepository = {
 	repository_id: number;
 	full_name: string;
@@ -124,7 +125,9 @@ async function publishUnverifiedPRCheck(env: Env, db: D1Database, row: Unverifie
 		.bind(lease, Date.now() + 60_000, row.repository_id, row.pr_number, row.head_sha, Date.now()).run();
 	if (!claimed.meta.changes) return;
 	try {
-		const connection = await db.prepare("SELECT installation_id FROM github_connection WHERE id=1").first<number>("installation_id");
+		const connection = hasOrganizationSelection(env)
+			? await db.prepare("SELECT installation_id FROM github_connections WHERE organization=?").bind(activeOrganization(env)).first<number>("installation_id")
+			: await db.prepare("SELECT installation_id FROM github_connection WHERE id=1").first<number>("installation_id");
 		if (!connection) throw new Error("APP_NOT_INSTALLED");
 		const github = await GitHub.installation(await organizationEnv(env), {
 			repository: { id: row.repository_id, fullName: row.full_name, installationId: connection },
@@ -167,7 +170,7 @@ export async function dispatchMatrix(env: Env, id: string) {
 	const db = dbFor(env);
 	const row = await db.prepare("SELECT r.full_name,a.matrix_digest,a.image_uri,m.matrix_digest AS configured_digest,m.image_uri AS configured_image FROM matrix_runs r JOIN matrix_repositories m ON m.repository_id=r.repository_id AND m.full_name=r.full_name LEFT JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id WHERE r.id=?")
 		.bind(id).first<{ full_name: string; matrix_digest: string | null; image_uri: string | null; configured_digest: string; configured_image: string }>();
-	if (!row || !specificationRequiredRepositories.includes(row.full_name as typeof specificationRequiredRepositories[number])) {
+	if (!row || !(allowedRepositories(env) as readonly string[]).includes(row.full_name)) {
 		throw new Error("MATRIX_REPOSITORY_NOT_AUTHORIZED");
 	}
 	if (!row.matrix_digest || !row.image_uri || row.matrix_digest !== row.configured_digest || row.image_uri !== row.configured_image) {
@@ -214,19 +217,16 @@ export async function acceptMatrixPR(
 	) {
 		return json({ status: "ignored" }, 202);
 	}
-	if (
-		specificationRequiredRepositories.includes(
-			p.repository
-				.full_name as (typeof specificationRequiredRepositories)[
-					number
-				],
-		)
-	) {
+	if ((allowedRepositories(env) as readonly string[]).includes(p.repository.full_name)) {
 		const selected = await db
 			.prepare(
-				"SELECT g.id AS repository_id,g.full_name,c.installation_id FROM github_repositories g JOIN github_connection c ON c.id=1 WHERE g.id=? AND g.full_name=? AND g.accessible=1 AND c.installation_id=?",
+				hasOrganizationSelection(env)
+					? "SELECT g.id AS repository_id,g.full_name,c.installation_id FROM github_repositories g JOIN github_connections c ON c.organization=? WHERE g.id=? AND g.full_name=? AND g.accessible=1 AND c.installation_id=? AND c.suspended=0"
+					: "SELECT g.id AS repository_id,g.full_name,c.installation_id FROM github_repositories g JOIN github_connection c ON c.id=1 WHERE g.id=? AND g.full_name=? AND g.accessible=1 AND c.installation_id=?",
 			)
-			.bind(p.repository.id, p.repository.full_name, p.installation.id)
+			.bind(...(hasOrganizationSelection(env)
+				? [activeOrganization(env), p.repository.id, p.repository.full_name, p.installation.id]
+				: [p.repository.id, p.repository.full_name, p.installation.id]))
 			.first<ReviewerRepository>();
 		if (!selected || pr.base.repo.id !== selected.repository_id) {
 			return json({ error: "REPOSITORY_NOT_SELECTED" }, 403);
@@ -243,8 +243,8 @@ export async function acceptMatrixPR(
 		const existing = await db.prepare("SELECT github_updated_at,head_sha,closed FROM unverified_pr_submissions WHERE repository_id=? AND pr_number=?")
 			.bind(selected.repository_id, pr.number).first<{ github_updated_at: string; head_sha: string; closed: number }>();
 		const mapping = await db.prepare(
-			"SELECT COUNT(DISTINCT t.id) AS matching_teams,MIN(t.id) AS team_id,MAX(t.track_finalized) AS track_finalized,MAX((SELECT COUNT(*) FROM team_repositories tr WHERE tr.team_id=t.id AND tr.active=1)) AS repository_count,MAX(EXISTS(SELECT 1 FROM team_repositories tr WHERE tr.team_id=t.id AND tr.repository_id=? AND tr.active=1)) AS selected_repository FROM console_identities i JOIN teams t ON t.id=i.team_id AND t.hackathon_id='initial' AND t.status='ACTIVE' JOIN team_members m ON m.id=COALESCE(i.team_member_id,(SELECT r.linked_team_member_id FROM team_roster_members r WHERE r.id=i.team_roster_member_id AND r.active=1)) AND m.team_id=t.id AND m.active=1 AND m.github_id=? WHERE i.role='participant' AND i.github_verified_at IS NOT NULL AND i.revoked_at IS NULL",
-		).bind(selected.repository_id, pr.user.id).first<{ matching_teams: number; team_id: string | null; track_finalized: number; repository_count: number; selected_repository: number }>();
+			"SELECT COUNT(DISTINCT t.id) AS matching_teams,MIN(t.id) AS team_id,MAX(t.track_finalized) AS track_finalized,MAX((SELECT COUNT(*) FROM team_repositories tr WHERE tr.team_id=t.id AND tr.active=1)) AS repository_count,MAX(EXISTS(SELECT 1 FROM team_repositories tr JOIN github_repositories selected ON selected.id=tr.repository_id WHERE tr.team_id=t.id AND tr.active=1 AND substr(selected.full_name,instr(selected.full_name,'/'))=substr(g.full_name,instr(g.full_name,'/')) AND substr(selected.full_name,1,instr(selected.full_name,'/')-1) IN ('Doom-Forge','180DC-VIT-CHENNAI'))) AS selected_repository FROM console_identities i JOIN teams t ON t.id=i.team_id AND t.hackathon_id='initial' AND t.status='ACTIVE' JOIN team_members m ON m.id=COALESCE(i.team_member_id,(SELECT r.linked_team_member_id FROM team_roster_members r WHERE r.id=i.team_roster_member_id AND r.active=1)) AND m.team_id=t.id AND m.active=1 AND m.github_id=? JOIN github_repositories g ON g.id=? WHERE i.role='participant' AND i.github_verified_at IS NOT NULL AND i.revoked_at IS NULL",
+		).bind(pr.user.id, selected.repository_id).first<{ matching_teams: number; team_id: string | null; track_finalized: number; repository_count: number; selected_repository: number }>();
 		const mappingStatus = !mapping?.matching_teams
 			? "MEMBER_NOT_REGISTERED"
 			: mapping.matching_teams > 1
@@ -318,8 +318,9 @@ export async function matrixApi(request: Request, env: Env) {
 		const [repositories, runs] = await Promise.all([
 			db
 				.prepare(
-				"SELECT g.id,g.full_name,m.baseline_sha,m.matrix_version,m.matrix_digest,m.image_uri FROM github_repositories g LEFT JOIN matrix_repositories m ON m.repository_id=g.id WHERE g.accessible=1 AND g.full_name IN ('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus')",
+				"SELECT g.id,g.full_name,m.baseline_sha,m.matrix_version,m.matrix_digest,m.image_uri FROM github_repositories g LEFT JOIN matrix_repositories m ON m.repository_id=g.id WHERE g.accessible=1 AND g.full_name IN (?,?,?,?)",
 				)
+				.bind(...allowedRepositories(env))
 				.all<{
 					id: number;
 					full_name: string;
@@ -341,6 +342,7 @@ export async function matrixApi(request: Request, env: Env) {
 				evaluation_status: matrixRepositoryStatus(
 					repository.full_name,
 					!!repository.matrix_version,
+					competitionOwner(env),
 				),
 			})),
 			runs: runs.results.map(decode),
@@ -358,7 +360,7 @@ export async function matrixApi(request: Request, env: Env) {
 		if (!isMatrixOriginAllowed(request, env)) {
 			return json({ error: "ORIGIN_NOT_ALLOWED" }, 403);
 		}
-		if (!specificationRequiredRepositories.includes(run.full_name as typeof specificationRequiredRepositories[number])) {
+		if (!(allowedRepositories(env) as readonly string[]).includes(run.full_name)) {
 			return json({ error: "MATRIX_REPOSITORY_NOT_AUTHORIZED" }, 403);
 		}
 		const approved = await db.prepare("SELECT 1 FROM matrix_profile_approvals a JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri WHERE a.repository_id=? AND a.matrix_digest=? AND a.image_uri=?")

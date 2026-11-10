@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { createAssignment, createIdentity, getGitHubStatus, getIdentities, getRepositories, getRubric, getTeams, getJudgeAssignments, publishRubric, revokeAssignment, revokeIdentity, syncRepositories, rubricCategories, type ConsoleIdentity, type JudgeAssignment, type RepositoryRecord, type RubricCategory, type RubricCriterion, type TeamRecord } from "./command-center/api";
+import { createAssignment, createIdentity, getGitHubStatus, getIdentities, getRepositories, getRubric, getTeams, getJudgeAssignments, publishRubric, revokeAssignment, revokeIdentity, startGitHubAppRegistration, syncRepositories, rubricCategories, type ConsoleIdentity, type JudgeAssignment, type RepositoryRecord, type RubricCategory, type RubricCriterion, type TeamRecord } from "./command-center/api";
 
 function ErrorLine({ children }: { children: string }) { return <p className="text-sm text-[var(--error)]" role="alert">{children}</p>; }
 
@@ -26,6 +26,7 @@ export function GitHubConnectionPanel() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [registeringOrganization, setRegisteringOrganization] = useState("");
   async function load() {
     setError("");
     try {
@@ -41,14 +42,62 @@ export function GitHubConnectionPanel() {
     catch (cause) { setError(cause instanceof Error ? cause.message : "Repository sync failed."); }
     finally { setBusy(false); }
   }
+  async function registerApp(organization: string) {
+    setRegisteringOrganization(organization); setError("");
+    try {
+      const registration = await startGitHubAppRegistration(organization);
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = registration.action;
+      const manifest = document.createElement("input");
+      manifest.type = "hidden";
+      manifest.name = "manifest";
+      manifest.value = JSON.stringify(registration.manifest);
+      form.append(manifest);
+      document.body.append(form);
+      form.submit();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "GitHub App registration could not be started.");
+      setRegisteringOrganization("");
+    }
+  }
+  const activeOrganization = status?.organization ?? "Doom-Forge";
+  const connections = status?.connections ?? (status?.app ? [{
+    organization: activeOrganization,
+    id: status.app.id,
+    slug: status.app.slug,
+    installationId: status.app.installationId,
+    suspended: status.app.suspended,
+    installUrl: status.app.installUrl,
+  }] : []);
+  const activeConnection = connections.find(item => item.organization.toLowerCase() === activeOrganization.toLowerCase());
+  const activeInstallationSuspended = activeConnection?.suspended === true;
+  const supportedOrganizations = [
+    { name: "Doom-Forge", flag: status?.organizationSelection?.doomForge },
+    { name: "180DC-VIT-CHENNAI", flag: status?.organizationSelection?.vitc },
+  ];
+  const organizations = status?.organizationSelection
+    ? supportedOrganizations
+    : [{ name: activeOrganization, flag: undefined }];
   return <Card id="organizer-github"><CardHeader><div><CardTitle>GitHub connection</CardTitle><CardDescription>Check the App installation and the four authorized challenge repositories.</CardDescription></div></CardHeader><CardContent className="github-panel-content">
     {error && <ErrorLine>{error}</ErrorLine>}
-    {status === null ? <p role="status">Loading GitHub connection…</p> : !status.app ? <div className="github-connection-state" role="status"><Badge tone="warning">Not configured</Badge><p>No GitHub App is configured for this organization.</p></div> : <div className="github-connection-state">
-      <div className="github-connection-heading"><span><strong>GitHub App</strong><small>{status.app.slug}</small></span><Badge tone={status.app.installationId === null ? "warning" : "success"}>{status.app.installationId === null ? "Installation needed" : "Connected"}</Badge></div>
-      <dl className="github-connection-details"><div><dt>App</dt><dd>{status.app.slug}</dd></div><div><dt>Installation ID</dt><dd>{status.app.installationId ?? "Not installed"}</dd></div></dl>
-      {status.app.installationId === null && <a className="github-install-link" href={status.app.installUrl}>Manage GitHub App installation</a>}
-    </div>}
-    <div className="github-sync-row"><Button disabled={busy || status?.app?.installationId == null} onClick={() => void sync()}>{busy ? "Syncing repositories…" : "Sync repositories"}</Button><span>{repositories.length} repositories synced</span></div>
+    {status === null ? <p role="status">Loading GitHub connections…</p> : <>
+      {status.organizationSelection && <div className="github-sync-row"><span>Active GitHub organization: <strong>{activeOrganization}</strong></span></div>}
+      <ul aria-label="GitHub organization connections" className="github-repository-list">{organizations.map(({ name, flag }) => {
+        const connection = connections.find(item => item.organization.toLowerCase() === name.toLowerCase());
+        const active = name.toLowerCase() === activeOrganization.toLowerCase();
+        return <li className="github-repository-card" key={name}>
+          <div className="github-repository-heading"><strong>{name}</strong><Badge tone={active ? "success" : "info"}>{status.organizationSelection ? `${name === "Doom-Forge" ? "USE_DOOMFORGE_ORG" : "USE_180DC_ORG"}=${flag ? "true" : "false"}` : active ? "Current organization" : "Available organization"}</Badge></div>
+          {connection ? <div className="github-connection-state">
+            <div className="github-connection-heading"><span><strong>GitHub App</strong><small>{connection.slug}</small></span><Badge tone={connection.suspended ? "danger" : connection.installationId === null ? "warning" : "success"}>{connection.suspended ? "Suspended" : connection.installationId === null ? "Installation needed" : "Connected"}</Badge></div>
+            <dl className="github-connection-details"><div><dt>App</dt><dd>{connection.slug}</dd></div><div><dt>Installation ID</dt><dd>{connection.installationId ?? "Not installed"}</dd></div></dl>
+            {connection.installationId === null && <a className="github-install-link" href={connection.installUrl}>Manage GitHub App installation</a>}
+          </div> : <div className="github-connection-state" role="status"><Badge tone="warning">Not configured</Badge><p>Register a GitHub App for this organization to enable its connection.</p><Button disabled={registeringOrganization !== ""} onClick={() => void registerApp(name)}>{registeringOrganization === name ? "Opening GitHub…" : "Register GitHub App"}</Button></div>}
+        </li>;
+      })}</ul>
+    </>}
+    <div className="github-sync-row"><Button disabled={busy || activeConnection?.installationId == null || activeInstallationSuspended} onClick={() => void sync()}>{busy ? "Syncing repositories…" : "Sync repositories"}</Button><span>{repositories.length} repositories synced</span></div>
+    {activeInstallationSuspended && <ErrorLine>The active organization’s GitHub App installation is suspended. Resume it in GitHub before syncing repositories.</ErrorLine>}
     {message && <p className="github-feedback github-feedback-success" role="status">{message}</p>}
     {repositories.length ? <ul aria-label="Authorized GitHub repositories" className="github-repository-list">{repositories.map(repo => <li className="github-repository-card" key={repo.id}>
       <div className="github-repository-heading"><strong>{repo.full_name}</strong><Badge tone={repo.accessible ? "success" : "danger"}>{repo.accessible ? "Accessible" : "Unavailable"}</Badge></div>

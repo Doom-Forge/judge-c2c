@@ -142,7 +142,27 @@ export async function importTeams(csv: string) {
 }
 
 export function getGitHubStatus() {
-	return request<{ app: { id: number; slug: string; installationId: number | null; installUrl: string } | null }>("/status", undefined, "");
+	return request<{
+		organization?: string;
+		organizationSelection?: { doomForge: boolean; vitc: boolean } | null;
+		connections?: Array<{
+			organization: string;
+			id: number;
+			slug: string;
+			installationId: number | null;
+			suspended?: boolean;
+			installUrl: string;
+		}>;
+		app: { id: number; slug: string; installationId: number | null; suspended?: boolean; installUrl: string } | null;
+	}>("/status", undefined, "");
+}
+
+export function startGitHubAppRegistration(organization: string) {
+	return request<{ action: string; manifest: Record<string, unknown> }>(
+		`/start?organization=${encodeURIComponent(organization)}`,
+		{ method: "POST", body: JSON.stringify({}) },
+		"",
+	);
 }
 
 export function syncRepositories() {

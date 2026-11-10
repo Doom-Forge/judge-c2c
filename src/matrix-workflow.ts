@@ -12,6 +12,7 @@ import { GitHub } from "./github";
 import { ensureDefaultReviewer } from "./default-reviewer";
 import { doombotNoticeBody, ensureDoomBotNotice } from "./doombot-notice";
 import { organizationEnv } from "./organization";
+import { activeOrganization, competitionRepositories, hasOrganizationSelection } from "./organization-selection";
 import { scoreMatrix, validateSnapshot } from "./matrix";
 import { matrixBudget, reserveMatrixStart } from "./matrix-budget";
 import { readBaseline, retainBaseline } from "./matrix-baseline";
@@ -39,23 +40,30 @@ const repoKey = (name: string): RepositoryKey => {
 	return key as RepositoryKey;
 };
 const dbFor = (env: Env) => env.ORG_DB ?? env.DB;
+const activeRepositories = (env: Env) => competitionRepositories(activeOrganization(env));
+const repositorySql = (env: Env) => activeRepositories(env).map(() => "?").join(",");
+async function activeConnection(env: Env) {
+	const db = dbFor(env);
+	return hasOrganizationSelection(env)
+		? await db.prepare("SELECT installation_id,slug FROM github_connections WHERE organization=? AND suspended=0").bind(activeOrganization(env)).first<{ installation_id: number | null; slug: string }>()
+		: await db.prepare("SELECT installation_id,slug FROM github_connection WHERE id=1").first<{ installation_id: number | null; slug: string }>();
+}
 async function current(env: Env, id: string) {
 	const db = dbFor(env);
 	const run = await db
 		.prepare(
-		"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri WHERE r.id=? AND r.full_name IN ('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus') AND s.closed=0 AND g.accessible=1 AND r.state IN ('QUEUED','RUNNING')",
+		`SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri WHERE r.id=? AND r.full_name IN (${repositorySql(env)}) AND s.closed=0 AND g.accessible=1 AND r.state IN ('QUEUED','RUNNING')`,
 		)
-		.bind(id)
+		.bind(id, ...activeRepositories(env))
 		.first<MatrixRun>();
 	if (!run) throw new Error("MATRIX_SUPERSEDED");
 	return run;
 }
 async function clientFor(env: Env, run: MatrixRun, pullRequestsWrite = false) {
 	const scoped = await organizationEnv(env);
-	const installation = await dbFor(env)
-		.prepare("SELECT installation_id FROM github_connection WHERE id=1")
-		.first<number>("installation_id");
-	if (!installation) throw new Error("APP_NOT_INSTALLED");
+	const connection = await activeConnection(env);
+	if (!connection?.installation_id) throw new Error("APP_NOT_INSTALLED");
+	const installation = connection.installation_id;
 	return GitHub.installation(
 		scoped,
 		{
@@ -404,9 +412,8 @@ async function requestMatrixReviewer(env: Env, run: MatrixRun) {
 async function notifyMatrix(env: Env, run: MatrixRun) {
 	try {
 		const db = dbFor(env);
-		const slug = await db
-			.prepare("SELECT slug FROM github_connection WHERE id=1")
-			.first<string>("slug");
+		const connection = await activeConnection(env);
+		const slug = connection?.slug;
 		const origin = env.ORG_PUBLIC_ORIGIN || env.PUBLIC_ORIGIN;
 		if (!slug || !origin) return;
 		const github = await clientFor(env, run, true);
@@ -442,11 +449,7 @@ export class MatrixEvaluationWorkflow extends WorkflowEntrypoint<
 						user: { id: number; login: string };
 					}>(`/repos/${run.full_name}/pulls/${run.pr_number}`);
 				if (pr.head.sha !== run.head_sha || pr.state !== "open") {
-					const installation = await db
-						.prepare(
-							"SELECT installation_id FROM github_connection WHERE id=1",
-						)
-						.first<number>("installation_id");
+					const installation = (await activeConnection(this.env))?.installation_id;
 					if (installation) {
 						await acceptMatrixPR(
 							{
@@ -677,8 +680,9 @@ export async function reconcileMatrix(env: Env) {
 	const db = dbFor(env);
 	const queued = await db
 		.prepare(
-			"SELECT r.id FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri WHERE r.full_name IN ('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus') AND r.state='QUEUED' AND s.closed=0 LIMIT 20",
+			`SELECT r.id FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri WHERE r.full_name IN (${repositorySql(env)}) AND r.state='QUEUED' AND s.closed=0 LIMIT 20`,
 		)
+		.bind(...activeRepositories(env))
 		.all<{ id: string }>();
 	for (const row of queued.results) {
 		await dispatchMatrix(env, row.id).catch(() => undefined);
@@ -686,9 +690,9 @@ export async function reconcileMatrix(env: Env) {
 	if (env.DEFAULT_PR_REVIEWER) {
 		const reviews = await db
 			.prepare(
-				"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri LEFT JOIN matrix_default_reviewers d ON d.repository_id=r.repository_id AND d.pr_number=r.pr_number AND d.reviewer=? WHERE r.full_name IN ('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus') AND s.closed=0 AND g.accessible=1 AND (d.status IS NULL OR d.status='PENDING') ORDER BY COALESCE(d.updated_at,'1970-01-01') ASC,r.created_at ASC LIMIT 100",
+				`SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri LEFT JOIN matrix_default_reviewers d ON d.repository_id=r.repository_id AND d.pr_number=r.pr_number AND d.reviewer=? WHERE r.full_name IN (${repositorySql(env)}) AND s.closed=0 AND g.accessible=1 AND (d.status IS NULL OR d.status='PENDING') ORDER BY COALESCE(d.updated_at,'1970-01-01') ASC,r.created_at ASC LIMIT 100`,
 			)
-			.bind(env.DEFAULT_PR_REVIEWER)
+			.bind(env.DEFAULT_PR_REVIEWER, ...activeRepositories(env))
 			.all<MatrixRun>();
 		for (const run of reviews.results) {
 			await requestMatrixReviewer(env, run);
@@ -699,9 +703,9 @@ export async function reconcileMatrix(env: Env) {
 	const noticeHash = await digest(doombotNoticeBody(origin));
 	const pending = await db
 		.prepare(
-			"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri LEFT JOIN matrix_doombot_notices n ON n.repository_id=r.repository_id AND n.pr_number=r.pr_number WHERE r.full_name IN ('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus') AND s.closed=0 AND g.accessible=1 AND r.state IN ('RUNNING','COMPLETED','FAILED') AND (n.comment_id IS NULL OR n.body_hash IS NULL OR n.body_hash<>?) ORDER BY r.created_at DESC LIMIT 100",
+			`SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri LEFT JOIN matrix_doombot_notices n ON n.repository_id=r.repository_id AND n.pr_number=r.pr_number WHERE r.full_name IN (${repositorySql(env)}) AND s.closed=0 AND g.accessible=1 AND r.state IN ('RUNNING','COMPLETED','FAILED') AND (n.comment_id IS NULL OR n.body_hash IS NULL OR n.body_hash<>?) ORDER BY r.created_at DESC LIMIT 100`,
 		)
-		.bind(noticeHash)
+		.bind(...activeRepositories(env), noticeHash)
 		.all<MatrixRun>();
 	for (const run of pending.results) {
 		try {

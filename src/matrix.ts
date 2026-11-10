@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pathSchema } from "./domain";
+import { competitionRepositories } from "./organization-selection";
 
 export const categories = ["scalability", "security", "usefulness"] as const;
 // Shared organizer rubric rendered on GitHub for the four current challenges.
@@ -22,14 +23,17 @@ export const activeCompetitionRepositories = [
 	"Doom-Forge/janus",
 ] as const;
 export const specificationRequiredRepositories = activeCompetitionRepositories;
+export const isSpecificationRequiredRepository = (
+	fullName: string,
+	organization = "Doom-Forge",
+) => (competitionRepositories(organization) as readonly string[]).includes(fullName);
 export const matrixRepositoryStatus = (
 	fullName: string,
 	configured: boolean,
+	organization = "Doom-Forge",
 ) => {
 	if (
-		specificationRequiredRepositories.includes(
-			fullName as (typeof specificationRequiredRepositories)[number],
-		)
+		isSpecificationRequiredRepository(fullName, organization)
 	) {
 		return "SPECIFICATION_REQUIRED";
 	}

@@ -26,6 +26,8 @@
     "DEMO_MODE": "false",
     "PREVIEW_TESTING": "false",
     "ORG_NAME": "Doom-Forge",
+    "USE_DOOMFORGE_ORG": "true",
+    "USE_180DC_ORG": "false",
     "ORG_VAULT_AAD": "judge-c2c:180DC-VIT-CHENNAI",
     "ORG_KEY_CONTEXT": "180DC-VIT-CHENNAI",
     "PUBLIC_ORIGIN": "https://doombot.180dcvitc.org",

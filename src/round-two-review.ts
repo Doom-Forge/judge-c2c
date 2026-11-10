@@ -6,6 +6,7 @@ import { roundTwoResults } from "./round-two-results";
 import { roundTwoGitHubEvidence, type EvidenceClientFactory } from "./round-two-github";
 import type { ConsoleSession } from "./console-identities";
 import type { Env } from "./env";
+import { competitionRepositoriesFor } from "./organization-selection";
 
 const json = (value: unknown, status = 200) =>
 	Response.json(value, {
@@ -259,6 +260,7 @@ export async function roundTwoReview(
 			.bind(teamPath[1])
 			.first();
 		if (!team) return json({ error: "NOT_FOUND" }, 404);
+		const activeTracks = competitionRepositoriesFor(env);
 		const [
 			members,
 			repositories,
@@ -275,9 +277,9 @@ export async function roundTwoReview(
 				.all(),
 			db
 				.prepare(
-					"SELECT g.id,g.full_name,g.default_branch FROM team_repositories tr JOIN github_repositories g ON g.id=tr.repository_id WHERE tr.team_id=? AND tr.active=1 ORDER BY g.full_name",
+					"SELECT current.id,current.full_name,current.default_branch FROM team_repositories tr JOIN github_repositories selected ON selected.id=tr.repository_id JOIN github_repositories current ON current.accessible=1 AND current.full_name IN(?,?,?,?) AND substr(current.full_name,instr(current.full_name,'/'))=substr(selected.full_name,instr(selected.full_name,'/')) WHERE tr.team_id=? AND tr.active=1 ORDER BY current.full_name",
 				)
-				.bind(teamPath[1])
+				.bind(...activeTracks, teamPath[1])
 				.all(),
 			db
 				.prepare(
@@ -293,9 +295,9 @@ export async function roundTwoReview(
 				.all(),
 			db
 				.prepare(
-					"SELECT s.repository_id,r.full_name,s.pr_number,s.head_sha,s.author_id,s.author_login,s.mapping_status,s.updated_at,s.closed,s.latest_run_id,m.state AS evaluation_status,m.failure_code,m.report FROM matrix_submissions s JOIN github_repositories r ON r.id=s.repository_id LEFT JOIN matrix_runs m ON m.id=s.latest_run_id WHERE s.team_id=? ORDER BY s.updated_at DESC LIMIT 100",
+					"SELECT s.repository_id,r.full_name,s.pr_number,s.head_sha,s.author_id,s.author_login,s.mapping_status,s.updated_at,s.closed,s.latest_run_id,m.state AS evaluation_status,m.failure_code,m.report FROM matrix_submissions s JOIN github_repositories r ON r.id=s.repository_id AND r.full_name IN(?,?,?,?) LEFT JOIN matrix_runs m ON m.id=s.latest_run_id WHERE s.team_id=? ORDER BY s.updated_at DESC LIMIT 100",
 				)
-				.bind(teamPath[1])
+				.bind(...activeTracks, teamPath[1])
 				.all<{
 					repository_id: number;
 					full_name: string;
@@ -313,9 +315,9 @@ export async function roundTwoReview(
 				}>(),
 			db
 				.prepare(
-					"SELECT s.repository_id,r.full_name,s.pr_number,s.head_sha,s.github_updated_at,s.closed,s.author_id,s.author_login,s.mapping_status,s.check_status FROM unverified_pr_submissions s JOIN github_repositories r ON r.id=s.repository_id AND r.accessible=1 JOIN team_repositories tr ON tr.team_id=s.team_id AND tr.repository_id=s.repository_id AND tr.active=1 WHERE s.team_id=? AND s.mapping_status='MAPPED' ORDER BY s.github_updated_at DESC LIMIT 100",
+					"SELECT s.repository_id,r.full_name,s.pr_number,s.head_sha,s.github_updated_at,s.closed,s.author_id,s.author_login,s.mapping_status,s.check_status FROM unverified_pr_submissions s JOIN github_repositories r ON r.id=s.repository_id AND r.accessible=1 AND r.full_name IN(?,?,?,?) JOIN team_repositories tr ON tr.team_id=s.team_id AND tr.active=1 JOIN github_repositories selected ON selected.id=tr.repository_id AND substr(selected.full_name,instr(selected.full_name,'/'))=substr(r.full_name,instr(r.full_name,'/')) WHERE s.team_id=? AND s.mapping_status='MAPPED' ORDER BY s.github_updated_at DESC LIMIT 100",
 				)
-				.bind(teamPath[1])
+				.bind(...activeTracks, teamPath[1])
 				.all<{
 					repository_id: number;
 					full_name: string;

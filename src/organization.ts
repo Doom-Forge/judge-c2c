@@ -1,6 +1,13 @@
 import { providerConfigured, providerHasKey } from './external-review';
 import { acceptMatrixPR } from './matrix-service';
-import { activeCompetitionRepositories } from './matrix';
+import {
+  activeOrganization,
+  competitionOwner,
+  competitionRepositories,
+  hasOrganizationSelection,
+  organizationNames,
+  type SupportedOrganization,
+} from './organization-selection';
 import { selectReviewModel } from './review-routing';
 import {
   requireOrganizationActive,
@@ -54,6 +61,10 @@ export const permissions = {
   issues: 'write',
   checks: 'write',
 } as const;
+const matrixPermissions = { ...permissions, pull_requests: 'write' } as const;
+function requestedPermissions(env: Env) {
+  return env.MATRIX_MODE === 'true' ? matrixPermissions : permissions;
+}
 const hex = z.string().regex(/^[a-f0-9]{64}$/);
 function random() {
   return Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
@@ -72,7 +83,7 @@ async function vaultKey(env: Env) {
 }
 function vaultAdditionalData(env: Env) {
   return new TextEncoder().encode(
-    env.ORG_VAULT_AAD ?? `judge-c2c:${env.ORG_NAME}`,
+    env.ORG_VAULT_AAD ?? `judge-c2c:${env.ORG_NAME ?? organizationNames.doomForge}`,
   );
 }
 export async function seal(env: Env, value: unknown) {
@@ -119,14 +130,56 @@ interface Connection {
   slug: string;
   encrypted: string;
   installation_id: number | null;
+  suspended?: number;
 }
-async function connection(env: Env) {
+async function connection(
+  env: Env,
+  organization = activeOrganization(env),
+) {
+  if (hasOrganizationSelection(env)) {
+    return env
+      .ORG_DB!.prepare('SELECT * FROM github_connections WHERE organization=?')
+      .bind(organization)
+      .first<Connection & { organization: string }>();
+  }
   return env
     .ORG_DB!.prepare('SELECT * FROM github_connection WHERE id=1')
     .first<Connection>();
 }
-export async function organizationEnv(env: Env): Promise<Env> {
-  const row = await connection(env);
+async function webhookConnection(
+  env: Env,
+  body: Uint8Array,
+  signature: string | null,
+) {
+  if (hasOrganizationSelection(env)) {
+    const rows = await env.ORG_DB!
+      .prepare('SELECT * FROM github_connections ORDER BY organization')
+      .all<Connection & { organization: string }>();
+    for (const row of rows.results) {
+      const secret = await unseal<AppSecret>(env, row.encrypted);
+      if (
+        secret.id === row.app_id &&
+        secret.slug === row.slug &&
+        (await verifyWebhook(body, signature, secret.webhookSecret))
+      ) {
+        return { row, organization: row.organization };
+      }
+    }
+    return null;
+  }
+  const organization = activeOrganization(env);
+  const row = await connection(env, organization);
+  if (!row) return null;
+  const orgenv = await organizationEnvFor(env, organization);
+  return (await verifyWebhook(body, signature, orgenv.GITHUB_WEBHOOK_SECRET!))
+    ? { row, organization }
+    : null;
+}
+export async function organizationEnvFor(
+  env: Env,
+  organization = activeOrganization(env),
+): Promise<Env> {
+  const row = await connection(env, organization);
   if (!row) throw new Error('APP_NOT_CONNECTED');
   const secret = await unseal<AppSecret>(env, row.encrypted);
   if (secret.id !== row.app_id || secret.slug !== row.slug) {
@@ -148,18 +201,29 @@ export async function organizationEnv(env: Env): Promise<Env> {
     EVALUATION_DETAILS_KIND: 'organization',
   };
 }
-async function appClient(env: Env) {
-  return GitHub.application(await organizationEnv(env));
+export async function organizationEnv(env: Env): Promise<Env> {
+  return organizationEnvFor(env, activeOrganization(env));
 }
-export async function installedClient(env: Env, repositoryId?: number, write = false) {
+async function appClient(
+  env: Env,
+  organization = activeOrganization(env),
+) {
+  return GitHub.application(await organizationEnvFor(env, organization));
+}
+export async function installedClient(
+  env: Env,
+  repositoryId?: number,
+  write = false,
+  organization = activeOrganization(env),
+) {
   await requireOrganizationActive({
     ...env,
     DB: env.ORG_DB!,
     EVALUATION_DETAILS_KIND: 'organization',
   });
-  const row = await connection(env);
+  const row = await connection(env, organization);
   if (!row?.installation_id) throw new Error('APP_NOT_INSTALLED');
-  const app = await appClient(env);
+  const app = await appClient(env, organization);
   await requireOrganizationActive({
     ...env,
     DB: env.ORG_DB!,
@@ -186,7 +250,8 @@ function competitionServices(env: Env): CompetitionServices {
     client: (repositoryId, write) => installedClient(env, repositoryId, write),
     evaluationEnv: () => organizationEnv(env),
     installationId: async () => {
-      const row = await connection(env);
+      const organization = activeOrganization(env);
+      const row = await connection(env, organization);
       if (!row?.installation_id) throw new Error('APP_NOT_INSTALLED');
       return row.installation_id;
     },
@@ -196,6 +261,7 @@ function competitionServices(env: Env): CompetitionServices {
       return row.slug;
     },
     capabilities: async () => {
+      const selectedOrganization = activeOrganization(env);
       if ((await retirementStatus(env.ORG_DB!)).state !== 'ACTIVE') {
         return {
           issuesWrite: false,
@@ -203,7 +269,7 @@ function competitionServices(env: Env): CompetitionServices {
           reason: 'ORGANIZATION_RETIRED',
         };
       }
-      const row = await connection(env);
+      const row = await connection(env, selectedOrganization);
       if (!row?.installation_id) {
         return {
           issuesWrite: false,
@@ -211,7 +277,7 @@ function competitionServices(env: Env): CompetitionServices {
           reason: 'APP_NOT_INSTALLED',
         };
       }
-      const app = await appClient(env);
+      const app = await appClient(env, selectedOrganization);
       const [installation, details] = await Promise.all([
         app.api<{ permissions: Record<string, string> }>(
           `/app/installations/${row.installation_id}`,
@@ -225,7 +291,7 @@ function competitionServices(env: Env): CompetitionServices {
         }>('/app'),
       ]);
       return {
-        app: appAccess(details, env.ORG_NAME!, row.installation_id),
+        app: appAccess(details, selectedOrganization, row.installation_id),
         issuesWrite: installation.permissions.issues === 'write',
         events: details.events,
         reason:
@@ -239,12 +305,13 @@ function competitionServices(env: Env): CompetitionServices {
 function manifest(
   env: Env,
   state: string,
+  organization: string = activeOrganization(env),
   origin = new URL(env.ORG_PUBLIC_ORIGIN!).origin,
 ) {
   return {
-    action: `https://github.com/organizations/${env.ORG_NAME}/settings/apps/new?state=${state}`,
+    action: `https://github.com/organizations/${organization}/settings/apps/new?state=${state}`,
     manifest: {
-      name: `Judge-C2C ${env.ORG_NAME}`,
+      name: `DoomBot ${organization === organizationNames.vitc ? '180DC' : organization} Judging`,
       url: origin,
       public: false,
       description:
@@ -253,10 +320,10 @@ function manifest(
         url: origin + '/webhooks/organization',
         active: true,
       },
-      redirect_url: origin + '/auth/github/manifest',
-      setup_url: origin + '/auth/github/installed',
+      redirect_url: origin + '/auth/github/manifest' + (hasOrganizationSelection(env) ? '?organization=' + encodeURIComponent(organization) : ''),
+      setup_url: origin + '/auth/github/installed' + (hasOrganizationSelection(env) ? '?organization=' + encodeURIComponent(organization) : ''),
       setup_on_update: true,
-      default_permissions: permissions,
+      default_permissions: requestedPermissions(env),
       // GitHub automatically delivers installation lifecycle events.
       default_events: ['pull_request', 'issues', 'issue_comment'],
     },
@@ -313,11 +380,14 @@ const appResponse = z.object({
   owner: z.object({ login: z.string(), type: z.literal('Organization') }),
   permissions: z.record(z.string(), z.string()),
 });
-async function sync(env: Env) {
-  const row = await connection(env);
+async function sync(
+  env: Env,
+  organization = activeOrganization(env),
+) {
+  const row = await connection(env, organization);
   if (!row?.installation_id) throw new Error('APP_NOT_INSTALLED');
   const installation = await (
-    await appClient(env)
+    await appClient(env, organization)
   ).api<{
     id: number;
     app_id: number;
@@ -327,12 +397,12 @@ async function sync(env: Env) {
   if (
     installation.app_id !== row.app_id ||
     installation.account.type !== 'Organization' ||
-    installation.account.login.toLowerCase() !== env.ORG_NAME!.toLowerCase() ||
+    installation.account.login.toLowerCase() !== organization.toLowerCase() ||
     installation.suspended_at
   ) {
     throw new Error('INSTALLATION_MISMATCH');
   }
-  const client = await installedClient(env);
+  const client = await installedClient(env, undefined, false, organization);
   const repositories: {
     id: number;
     full_name: string;
@@ -352,7 +422,7 @@ async function sync(env: Env) {
       batch.repositories.some(
         (r) =>
           r.full_name.split('/')[0]!.toLowerCase() !==
-          env.ORG_NAME!.toLowerCase(),
+          organization.toLowerCase(),
       )
     ) {
       throw new Error('REPOSITORY_ORGANIZATION_MISMATCH');
@@ -361,9 +431,12 @@ async function sync(env: Env) {
     if (batch.repositories.length < 100) break;
     if (page === 10) throw new Error('REPOSITORY_LIMIT');
   }
+  const allowedRepositories = hasOrganizationSelection(env)
+    ? competitionRepositories(organization)
+    : competitionRepositories(competitionOwner(env));
   const activeRepositories = env.MATRIX_MODE === 'true'
     ? repositories.filter((repository) =>
-        (activeCompetitionRepositories as readonly string[]).includes(repository.full_name),
+        (allowedRepositories as readonly string[]).includes(repository.full_name),
       )
     : repositories;
   await env.ORG_DB!.batch([
@@ -431,7 +504,7 @@ async function activate(request: Request, env: Env, ctx: ExecutionContext) {
       fullName: r.full_name,
       installationId: row!.installation_id,
     },
-    department: env.ORG_NAME,
+    department: activeOrganization(env),
     category: 'Engineering challenge',
     baseline: sha.parse(commit.sha),
     issueNumbers: [data.issueNumber],
@@ -576,8 +649,7 @@ export async function organization(
     !env.ORG_DB ||
     !env.ORG_ADMIN_TOKEN ||
     !env.ORG_VAULT_KEY ||
-    !env.ORG_PUBLIC_ORIGIN ||
-    !env.ORG_NAME
+    !env.ORG_PUBLIC_ORIGIN
   ) {
     return Response.json(
       { error: 'ORGANIZATION_NOT_CONFIGURED' },
@@ -691,19 +763,19 @@ export async function organization(
     if ((await retirementStatus(env.ORG_DB)).state !== 'ACTIVE') {
       return json({ error: 'ORGANIZATION_RETIRED' }, 409);
     }
-    const row = await connection(env);
-    if (!row) return json({ error: 'APP_NOT_CONNECTED' }, 503);
-    const orgenv = await organizationEnv(env);
     const body = await boundedBody(request, 1_000_000);
-    if (
-      !(await verifyWebhook(
-        body,
-        request.headers.get('x-hub-signature-256'),
-        orgenv.GITHUB_WEBHOOK_SECRET!,
-      ))
-    ) {
-      return json({ error: 'INVALID_SIGNATURE' }, 401);
+    const matched = await webhookConnection(
+      env,
+      body,
+      request.headers.get('x-hub-signature-256'),
+    );
+    if (!matched) return json({ error: 'INVALID_SIGNATURE' }, 401);
+    const active = activeOrganization(env);
+    if (matched.organization !== active) {
+      return json({ status: 'inactive_organization_ignored' }, 202);
     }
+    const row = matched.row;
+    const orgenv = await organizationEnvFor(env, matched.organization);
     const event = request.headers.get('x-github-event');
     const delivery = request.headers.get('x-github-delivery');
     if (!delivery || !/^[a-zA-Z0-9-]{1,100}$/.test(delivery)) {
@@ -753,11 +825,23 @@ export async function organization(
       if (suspended) {
         // A delayed suspend delivery must not undo a newer unsuspension.
         const current = await (
-          await appClient(env)
+          await appClient(env, matched.organization)
         ).api<{ suspended_at: string | null }>(
           `/app/installations/${row.installation_id}`,
         );
         suspended = !!current.suspended_at;
+      }
+      if (matched.organization !== active) {
+        if (hasOrganizationSelection(env)) {
+          await env.ORG_DB.batch([
+            payload.action === 'deleted'
+              ? env.ORG_DB.prepare('UPDATE github_connections SET installation_id=NULL,suspended=0 WHERE organization=? AND installation_id=?').bind(matched.organization, row.installation_id)
+              : env.ORG_DB.prepare('UPDATE github_connections SET suspended=? WHERE organization=? AND installation_id=?').bind(Number(suspended), matched.organization, row.installation_id),
+            env.ORG_DB.prepare('INSERT INTO audit(action,entity) VALUES(?,?)').bind('installation.' + payload.action, String(row.installation_id)),
+            env.ORG_DB.prepare('INSERT OR IGNORE INTO deliveries(id,payload_hash,event) VALUES(?,?,?)').bind(delivery, payloadHash, event),
+          ]);
+        }
+        return json({ status: 'inactive_installation_updated' });
       }
       if (payload.action === 'deleted' || suspended) {
         await env.ORG_DB.batch([
@@ -770,10 +854,17 @@ export async function organization(
           ).bind('installation.' + payload.action, String(row.installation_id)),
           ...(payload.action === 'deleted'
             ? [
-                env.ORG_DB.prepare(
-                  'UPDATE github_connection SET installation_id=NULL WHERE id=1',
-                ),
+                hasOrganizationSelection(env)
+                  ? env.ORG_DB.prepare(
+                      'UPDATE github_connections SET installation_id=NULL,suspended=0 WHERE organization=?',
+                    ).bind(activeOrganization(env))
+                  : env.ORG_DB.prepare(
+                      'UPDATE github_connection SET installation_id=NULL WHERE id=1',
+                    ),
               ]
+            : []),
+          ...(hasOrganizationSelection(env) && payload.action !== 'deleted'
+            ? [env.ORG_DB.prepare('UPDATE github_connections SET suspended=? WHERE organization=?').bind(Number(suspended), activeOrganization(env))]
             : []),
         ]);
       } else await sync(env);
@@ -888,7 +979,7 @@ export async function organization(
   const session = await organizer(request, env);
   if (url.pathname === '/api/organization/status' && request.method === 'GET') {
     if (!session) {
-      return json({ organization: env.ORG_NAME, authenticated: false });
+      return json({ organization: activeOrganization(env), authenticated: false });
     }
     const identity = {
       id: session.identity_id,
@@ -898,7 +989,7 @@ export async function organization(
     };
     if (session.role === 'participant') {
       return json({
-        organization: env.ORG_NAME,
+        organization: activeOrganization(env),
         authenticated: true,
         role: session.role,
         identity,
@@ -908,7 +999,17 @@ export async function organization(
         },
       });
     }
-    const row = await connection(env);
+    const selectedOrganization = activeOrganization(env);
+    const row = await connection(env, selectedOrganization);
+    const connections = hasOrganizationSelection(env)
+      ? (
+          await env.ORG_DB!.prepare(
+            'SELECT organization,app_id,slug,installation_id,suspended FROM github_connections ORDER BY organization',
+          ).all<{ organization: string; app_id: number; slug: string; installation_id: number | null; suspended: number }>()
+        ).results
+      : row
+        ? [{ organization: selectedOrganization, app_id: row.app_id, slug: row.slug, installation_id: row.installation_id }]
+        : [];
     return json({
       retirement:
         session.role === 'organizer'
@@ -919,7 +1020,21 @@ export async function organization(
                 .archiveReadOnly,
             },
       identity,
-      organization: env.ORG_NAME,
+      organization: selectedOrganization,
+      organizationSelection: hasOrganizationSelection(env)
+        ? {
+            doomForge: env.USE_DOOMFORGE_ORG === 'true',
+            vitc: env.USE_180DC_ORG === 'true',
+          }
+        : null,
+      connections: connections.map((item) => ({
+        organization: item.organization,
+        id: item.app_id,
+        slug: item.slug,
+        installationId: item.installation_id,
+        suspended: 'suspended' in item && item.suspended === 1,
+        installUrl: `https://github.com/apps/${item.slug}/installations/new?organization=${encodeURIComponent(item.organization)}`,
+      })),
       authenticated: true,
       role: session.role,
       runner: {
@@ -954,7 +1069,7 @@ export async function organization(
             id: row.app_id,
             slug: row.slug,
             installationId: row.installation_id,
-            installUrl: `https://github.com/apps/${row.slug}/installations/new`,
+            installUrl: `https://github.com/apps/${row.slug}/installations/new?organization=${encodeURIComponent(selectedOrganization)}`,
           }
         : null,
     });
@@ -975,7 +1090,7 @@ export async function organization(
     if (!commits.success) return json({ error: 'INVALID_INPUT' }, 400);
     let sources;
     try {
-      sources = await readDiagnosticSources(commits.data);
+      sources = await readDiagnosticSources(commits.data, activeOrganization(env));
     } catch (error) {
       return json({
         error: 'MATRIX_DIAGNOSTIC_SOURCE_UNAVAILABLE',
@@ -1274,17 +1389,30 @@ export async function organization(
     );
   }
   if (url.pathname === '/api/organization/start' && request.method === 'POST') {
-    if (await connection(env)) {
+    const requestedOrganization = hasOrganizationSelection(env)
+      ? z.enum([organizationNames.doomForge, organizationNames.vitc]).parse(
+          url.searchParams.get('organization') ?? activeOrganization(env),
+        )
+      : activeOrganization(env);
+    if (await connection(env, requestedOrganization)) {
       return json({ error: 'APP_ALREADY_REGISTERED' }, 409);
     }
     hex.parse(env.ORG_VAULT_KEY);
     const state = random();
-    await env.ORG_DB.prepare(
-      'INSERT INTO github_setup_states(hash,session_hash,expires_at) VALUES(?,?,?)',
-    )
-      .bind(await digest(state), session.hash, Date.now() + 3600000)
-      .run();
-    return json(manifest(env, state, origin));
+    if (hasOrganizationSelection(env)) {
+      await env.ORG_DB.prepare(
+        'INSERT INTO github_setup_states(hash,session_hash,expires_at,organization) VALUES(?,?,?,?)',
+      )
+        .bind(await digest(state), session.hash, Date.now() + 3600000, requestedOrganization)
+        .run();
+    } else {
+      await env.ORG_DB.prepare(
+        'INSERT INTO github_setup_states(hash,session_hash,expires_at) VALUES(?,?,?)',
+      )
+        .bind(await digest(state), session.hash, Date.now() + 3600000)
+        .run();
+    }
+    return json(manifest(env, state, requestedOrganization, origin));
   }
   if (url.pathname === '/auth/github/manifest' && request.method === 'GET') {
     const state = hex.parse(url.searchParams.get('state')),
@@ -1292,6 +1420,18 @@ export async function organization(
         .string()
         .regex(/^[A-Za-z0-9_-]{10,200}$/)
         .parse(url.searchParams.get('code'));
+    let targetOrganization: string;
+    if (hasOrganizationSelection(env)) {
+      const setup = await env.ORG_DB.prepare(
+        'SELECT organization FROM github_setup_states WHERE hash=? AND session_hash=? AND used=0 AND expires_at>?',
+      )
+        .bind(await digest(state), session.hash, Date.now())
+        .first<{ organization: SupportedOrganization }>();
+      if (!setup) return json({ error: 'INVALID_SETUP_STATE' }, 403);
+      targetOrganization = setup.organization;
+    } else {
+      targetOrganization = activeOrganization(env);
+    }
     const spent = await env.ORG_DB.prepare(
       'UPDATE github_setup_states SET used=1 WHERE hash=? AND session_hash=? AND used=0 AND expires_at>?',
     )
@@ -1309,13 +1449,13 @@ export async function organization(
       ),
     );
     if (
-      value.owner.login.toLowerCase() !== env.ORG_NAME.toLowerCase() ||
+      value.owner.login.toLowerCase() !== targetOrganization.toLowerCase() ||
       Object.entries(value.permissions).some(([key, access]) =>
         key === 'metadata'
           ? access !== 'read'
-          : permissions[key as keyof typeof permissions] !== access,
+          : requestedPermissions(env)[key as keyof typeof permissions] !== access,
       ) ||
-      Object.entries(permissions).some(
+      Object.entries(requestedPermissions(env)).some(
         ([key, access]) => value.permissions[key] !== access,
       )
     ) {
@@ -1330,11 +1470,14 @@ export async function organization(
       key,
       webhookSecret: value.webhook_secret,
     });
-    const result = await env.ORG_DB.prepare(
-      'INSERT OR IGNORE INTO github_connection(id,app_id,slug,encrypted) VALUES(1,?,?,?)',
-    )
-      .bind(value.id, value.slug, encrypted)
-      .run();
+    const resultStatement = env.ORG_DB.prepare(
+      hasOrganizationSelection(env)
+        ? 'INSERT OR IGNORE INTO github_connections(organization,app_id,slug,encrypted) VALUES(?,?,?,?)'
+        : 'INSERT OR IGNORE INTO github_connection(id,app_id,slug,encrypted) VALUES(1,?,?,?)',
+    );
+    const result = hasOrganizationSelection(env)
+      ? await resultStatement.bind(targetOrganization, value.id, value.slug, encrypted).run()
+      : await resultStatement.bind(value.id, value.slug, encrypted).run();
     if (!result.meta.changes) {
       return json({ error: 'APP_ALREADY_REGISTERED' }, 409);
     }
@@ -1346,10 +1489,15 @@ export async function organization(
       .int()
       .positive()
       .parse(url.searchParams.get('installation_id'));
-    const row = await connection(env);
+    const targetOrganization = hasOrganizationSelection(env)
+      ? z.enum([organizationNames.doomForge, organizationNames.vitc]).parse(
+          url.searchParams.get('organization') ?? activeOrganization(env),
+        )
+      : activeOrganization(env);
+    const row = await connection(env, targetOrganization);
     if (!row) return json({ error: 'APP_NOT_CONNECTED' }, 409);
     const installation = await (
-      await appClient(env)
+      await appClient(env, targetOrganization)
     ).api<{
       app_id: number;
       account: { login: string; type: string };
@@ -1358,17 +1506,25 @@ export async function organization(
     if (
       installation.app_id !== row.app_id ||
       installation.account.type !== 'Organization' ||
-      installation.account.login.toLowerCase() !== env.ORG_NAME.toLowerCase() ||
+      installation.account.login.toLowerCase() !== targetOrganization.toLowerCase() ||
       installation.suspended_at
     ) {
       return json({ error: 'INSTALLATION_MISMATCH' }, 403);
     }
-    await env.ORG_DB.prepare(
-      'UPDATE github_connection SET installation_id=? WHERE id=1',
-    )
-      .bind(id)
-      .run();
-    await sync(env);
+    if (hasOrganizationSelection(env)) {
+      await env.ORG_DB.prepare(
+        'UPDATE github_connections SET installation_id=?,suspended=0 WHERE organization=? AND app_id=?',
+      )
+        .bind(id, targetOrganization, row.app_id)
+        .run();
+    } else {
+      await env.ORG_DB.prepare(
+        'UPDATE github_connection SET installation_id=? WHERE id=1',
+      )
+        .bind(id)
+        .run();
+    }
+    if (targetOrganization === activeOrganization(env)) await sync(env);
     return Response.redirect(origin + '/?organization=1', 303);
   }
   if (url.pathname === '/api/organization/sync' && request.method === 'POST') {
@@ -1382,9 +1538,9 @@ export async function organization(
       repositories: (
         await env.ORG_DB.prepare(
           env.MATRIX_MODE === 'true'
-            ? "SELECT id,full_name,private,default_branch,accessible FROM github_repositories WHERE full_name IN ('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus') ORDER BY full_name"
+            ? 'SELECT id,full_name,private,default_branch,accessible FROM github_repositories WHERE full_name IN (?,?,?,?) ORDER BY full_name'
             : 'SELECT id,full_name,private,default_branch,accessible FROM github_repositories ORDER BY full_name',
-        ).all()
+        ).bind(...(env.MATRIX_MODE === 'true' ? competitionRepositories(competitionOwner(env)) : [])).all()
       ).results,
     });
   }

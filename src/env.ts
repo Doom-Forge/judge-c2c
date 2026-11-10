@@ -36,6 +36,8 @@ export interface Env {
   ORG_NAME?: string;
   ORG_VAULT_AAD?: string;
   ORG_KEY_CONTEXT?: string;
+  USE_DOOMFORGE_ORG?: string;
+  USE_180DC_ORG?: string;
   ORG_PUBLIC_ORIGIN?: string;
   ORG_REVIEW_ORIGINS?: string;
   ORG_ADMIN_TOKEN?: string;

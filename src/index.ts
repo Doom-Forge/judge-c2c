@@ -18,6 +18,7 @@ export {
 import { z } from 'zod';
 import type { Env } from './env';
 import { maintainOrganization, organization } from './organization';
+import { activeOrganization } from './organization-selection';
 export { OrganizationEvaluationWorkflow } from './organization-workflow';
 import { api } from './api';
 import { webhook } from './intake';
@@ -40,6 +41,7 @@ export default {
     const url = new URL(request.url);
     let response: Response;
     try {
+      if (env.MATRIX_MODE === 'true') activeOrganization(env);
       if (
         env.MATRIX_MODE === 'true' &&
         (url.pathname.startsWith('/api/organization/') ||
@@ -231,6 +233,12 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ) {
+    try {
+      if (env.MATRIX_MODE === 'true') activeOrganization(env);
+    } catch {
+      console.error(JSON.stringify({ event: 'organization_selection_invalid' }));
+      return;
+    }
     if (env.ORG_DB && env.TEAM_EMAIL_SENDER) {
       ctx.waitUntil(dispatchTeamEmail(env));
       ctx.waitUntil(dispatchTeamInvitations(env));
