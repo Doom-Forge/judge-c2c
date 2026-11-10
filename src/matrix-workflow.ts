@@ -43,7 +43,7 @@ async function current(env: Env, id: string) {
 	const db = dbFor(env);
 	const run = await db
 		.prepare(
-		"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri WHERE r.id=? AND r.full_name IN ('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus') AND s.closed=0 AND g.accessible=1 AND r.state IN ('QUEUED','RUNNING')",
+		"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri WHERE r.id=? AND r.full_name IN ('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus') AND s.closed=0 AND g.accessible=1 AND r.state IN ('QUEUED','RUNNING')",
 		)
 		.bind(id)
 		.first<MatrixRun>();
@@ -677,7 +677,7 @@ export async function reconcileMatrix(env: Env) {
 	const db = dbFor(env);
 	const queued = await db
 		.prepare(
-			"SELECT r.id FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri WHERE r.full_name IN ('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus') AND r.state='QUEUED' AND s.closed=0 LIMIT 20",
+			"SELECT r.id FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri WHERE r.full_name IN ('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus') AND r.state='QUEUED' AND s.closed=0 LIMIT 20",
 		)
 		.all<{ id: string }>();
 	for (const row of queued.results) {
@@ -686,7 +686,7 @@ export async function reconcileMatrix(env: Env) {
 	if (env.DEFAULT_PR_REVIEWER) {
 		const reviews = await db
 			.prepare(
-				"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri LEFT JOIN matrix_default_reviewers d ON d.repository_id=r.repository_id AND d.pr_number=r.pr_number AND d.reviewer=? WHERE r.full_name IN ('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus') AND s.closed=0 AND g.accessible=1 AND (d.status IS NULL OR d.status='PENDING') ORDER BY COALESCE(d.updated_at,'1970-01-01') ASC,r.created_at ASC LIMIT 100",
+				"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri LEFT JOIN matrix_default_reviewers d ON d.repository_id=r.repository_id AND d.pr_number=r.pr_number AND d.reviewer=? WHERE r.full_name IN ('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus') AND s.closed=0 AND g.accessible=1 AND (d.status IS NULL OR d.status='PENDING') ORDER BY COALESCE(d.updated_at,'1970-01-01') ASC,r.created_at ASC LIMIT 100",
 			)
 			.bind(env.DEFAULT_PR_REVIEWER)
 			.all<MatrixRun>();
@@ -699,7 +699,7 @@ export async function reconcileMatrix(env: Env) {
 	const noticeHash = await digest(doombotNoticeBody(origin));
 	const pending = await db
 		.prepare(
-			"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri LEFT JOIN matrix_doombot_notices n ON n.repository_id=r.repository_id AND n.pr_number=r.pr_number WHERE r.full_name IN ('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus') AND s.closed=0 AND g.accessible=1 AND r.state IN ('RUNNING','COMPLETED','FAILED') AND (n.comment_id IS NULL OR n.body_hash IS NULL OR n.body_hash<>?) ORDER BY r.created_at DESC LIMIT 100",
+			"SELECT r.* FROM matrix_runs r JOIN matrix_submissions s ON s.latest_run_id=r.id JOIN github_repositories g ON g.id=r.repository_id JOIN matrix_profile_approvals a ON a.repository_id=r.repository_id AND a.matrix_digest=r.matrix_digest AND a.image_uri=r.image_uri JOIN matrix_repositories m ON m.repository_id=a.repository_id AND m.matrix_digest=a.matrix_digest AND m.image_uri=a.image_uri LEFT JOIN matrix_doombot_notices n ON n.repository_id=r.repository_id AND n.pr_number=r.pr_number WHERE r.full_name IN ('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus') AND s.closed=0 AND g.accessible=1 AND r.state IN ('RUNNING','COMPLETED','FAILED') AND (n.comment_id IS NULL OR n.body_hash IS NULL OR n.body_hash<>?) ORDER BY r.created_at DESC LIMIT 100",
 		)
 		.bind(noticeHash)
 		.all<MatrixRun>();

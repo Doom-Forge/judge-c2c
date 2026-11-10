@@ -87,7 +87,7 @@ beforeEach(async () => {
 		.run();
 	await db
 		.prepare(
-			"INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(1,'180DC-VIT-CHENNAI/veera-footwear',0,'main')",
+			"INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(1,'Doom-Forge/veera-footwear',0,'main')",
 		)
 		.run();
 	await db
@@ -96,7 +96,7 @@ beforeEach(async () => {
 		)
 		.run();
 		await db.prepare(
-			"INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(2,'180DC-VIT-CHENNAI/mazhai-cover',0,'main')",
+			"INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(2,'Doom-Forge/mazhai-cover',0,'main')",
 		).run();
 		await db.prepare(
 			"INSERT INTO round_two_repository_rubric_versions(id,repository_id,version,criteria,actor) VALUES('rubric-a',1,1,'[]','organizer:test'),('rubric-b',2,1,'[]','organizer:test')",

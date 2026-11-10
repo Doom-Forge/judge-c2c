@@ -60,14 +60,14 @@ beforeAll(async () => {
 		)
 		.run();
 	await db
-		.prepare("INSERT INTO github_repositories VALUES(1442222462,'180DC-VIT-CHENNAI/mazhai-cover',0,'main',1)")
+		.prepare("INSERT INTO github_repositories VALUES(1442222462,'Doom-Forge/mazhai-cover',0,'main',1)")
 		.run();
 }, 30000);
 afterAll(async () => mf.dispose());
 async function request(
 	valid = true,
 	event = "pull_request",
-	repository = { id: 1442222462, full_name: "180DC-VIT-CHENNAI/mazhai-cover" },
+	repository = { id: 1442222462, full_name: "Doom-Forge/mazhai-cover" },
 ) {
 	const body = JSON.stringify({
 		action: "opened",

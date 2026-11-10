@@ -233,7 +233,7 @@ test("super admin inspects participant and judge dashboards without impersonatio
 		if (path === "/api/organization/manage/overview") return route.fulfill({ json: { counts: { teams: 1, activeTeams: 1, notSubmitted: 0 } } });
 		if (path === "/api/organization/round-two/teams") return route.fulfill({ json: { teams: [{ id: "team-1", name: "Team One", status: "ACTIVE", submission_count: 1, document_count: 1 }], deadlines: null } });
 		if (path === "/api/organization/round-two/assignments") return route.fulfill({ json: { assignments: [{ id: "assignment-1", judge_identity_id: "judge-1", judge_name: "Judge One", team_id: "team-1", team_name: "Team One", assigned_at: "2026-11-09T10:00:00Z", revoked_at: null }] } });
-		if (path === "/api/organization/round-two/teams/team-1") return route.fulfill({ json: { team: { id: "team-1", name: "Team One", status: "ACTIVE" }, members: [{ id: "member-1", display_name: "Team Lead", github_login: "lead" }], repositories: [{ id: 17, full_name: "180DC-VIT-CHENNAI/mazhai-cover", default_branch: "main" }], submissions: [{ repository_id: 17, pr_number: 7, head_sha: "abc123def456", author_login: "lead", status: "OPEN", github_updated_at: "2026-11-09T10:00:00Z", full_name: "180DC-VIT-CHENNAI/mazhai-cover" }], documents: [{ id: "doc-1", version: 1, filename: "analysis.pdf", bytes: 1024, status: "STORED", created_at: "2026-11-09T09:00:00Z" }], matrixSubmissions: [], unverifiedPullRequests: [{ repository_id: 17, full_name: "180DC-VIT-CHENNAI/mazhai-cover", pr_number: 7, head_sha: "abc123def456", author_login: "lead", check_status: "PENDING", closed: 0 }] } });
+		if (path === "/api/organization/round-two/teams/team-1") return route.fulfill({ json: { team: { id: "team-1", name: "Team One", status: "ACTIVE" }, members: [{ id: "member-1", display_name: "Team Lead", github_login: "lead" }], repositories: [{ id: 17, full_name: "Doom-Forge/mazhai-cover", default_branch: "main" }], submissions: [{ repository_id: 17, pr_number: 7, head_sha: "abc123def456", author_login: "lead", status: "OPEN", github_updated_at: "2026-11-09T10:00:00Z", full_name: "Doom-Forge/mazhai-cover" }], documents: [{ id: "doc-1", version: 1, filename: "analysis.pdf", bytes: 1024, status: "STORED", created_at: "2026-11-09T09:00:00Z" }], matrixSubmissions: [], unverifiedPullRequests: [{ repository_id: 17, full_name: "Doom-Forge/mazhai-cover", pr_number: 7, head_sha: "abc123def456", author_login: "lead", check_status: "PENDING", closed: 0 }] } });
 		if (path === "/api/organization/round-two/results") return route.fulfill({ json: { results: [{ teamId: "team-1", finalScore: null, status: "PENDING" }] } });
 		if (path === "/api/organization/round-two/reviews" && request.method() === "GET") {
 			expect(url.searchParams.get("judgeIdentityId")).toBe("judge-1");
@@ -248,7 +248,7 @@ test("super admin inspects participant and judge dashboards without impersonatio
 	await page.getByRole("link", { name: "Inspect dashboards" }).click();
 	await expect(page.getByRole("heading", { name: "Team One" })).toBeVisible();
 	await expect(page.getByText("lead@example.test", { exact: true })).toBeVisible();
-	await expect(page.getByText("180DC-VIT-CHENNAI/mazhai-cover", { exact: true })).toBeVisible();
+	await expect(page.getByText("Doom-Forge/mazhai-cover", { exact: true })).toBeVisible();
 	await expect(page.getByText("analysis.pdf")).toBeVisible();
 	await expect(page.getByText("UNVERIFIED", { exact: true })).toBeVisible();
 	await expect(page.getByLabel(/team key/i)).toHaveCount(0);

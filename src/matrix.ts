@@ -16,10 +16,10 @@ export const githubEvidenceCategories = [
 // are being prepared. They have no trusted matrix, baseline, or container image
 // yet and must not be evaluated or scored.
 export const activeCompetitionRepositories = [
-	"180DC-VIT-CHENNAI/mazhai-cover",
-	"180DC-VIT-CHENNAI/pricingpulse",
-	"180DC-VIT-CHENNAI/veera-footwear",
-	"180DC-VIT-CHENNAI/janus",
+	"Doom-Forge/mazhai-cover",
+	"Doom-Forge/pricingpulse",
+	"Doom-Forge/veera-footwear",
+	"Doom-Forge/janus",
 ] as const;
 export const specificationRequiredRepositories = activeCompetitionRepositories;
 export const matrixRepositoryStatus = (

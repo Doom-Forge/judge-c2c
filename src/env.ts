@@ -34,6 +34,8 @@ export interface Env {
   TEAM_EMAIL_SENDER?: Fetcher;
   ORG_EVALUATOR?: Workflow<{ runId: string }>;
   ORG_NAME?: string;
+  ORG_VAULT_AAD?: string;
+  ORG_KEY_CONTEXT?: string;
   ORG_PUBLIC_ORIGIN?: string;
   ORG_REVIEW_ORIGINS?: string;
   ORG_ADMIN_TOKEN?: string;

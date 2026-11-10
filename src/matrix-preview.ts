@@ -8,7 +8,7 @@ const syntheticNotice =
 export async function previewFixtures() {
   const repositories = Object.keys(matrices).map((name, index) => ({
     id: `synthetic-repository-${index + 1}`,
-    full_name: `180DC-VIT-CHENNAI/${name}`,
+    full_name: `Doom-Forge/${name}`,
   }));
   const runs = [];
   for (const [index, [name, matrix]] of Object.entries(matrices).entries()) {
@@ -50,7 +50,7 @@ export async function previewFixtures() {
       runs.push({
         id: (index * 3 + attempt + 1).toString(16).padStart(64, '0'),
         repository_id: repositories[index]!.id,
-        full_name: `180DC-VIT-CHENNAI/${name}`,
+        full_name: `Doom-Forge/${name}`,
         pr_number: attempt + 1,
         head_sha: 'a'.repeat(40),
         baseline_sha: 'b'.repeat(40),

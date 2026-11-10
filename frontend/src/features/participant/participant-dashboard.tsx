@@ -34,10 +34,10 @@ type ParticipantPayload = {
 type TrackOption = { repositoryId: number; fullName: string };
 type ParticipantOnboardingStatus = { isTeamLead: boolean; trackSelected: boolean; githubLinked: boolean; canEnterDashboard: boolean };
 const challengeTracks = [
-  { fullName: "180DC-VIT-CHENNAI/mazhai-cover", name: "Mazhai Cover", brief: "Micro-insurance pricing" },
-  { fullName: "180DC-VIT-CHENNAI/pricingpulse", name: "PricingPulse", brief: "Dynamic pricing simulator" },
-  { fullName: "180DC-VIT-CHENNAI/veera-footwear", name: "Veera Footwear", brief: "Borrowed-audience campaign" },
-  { fullName: "180DC-VIT-CHENNAI/janus", name: "JANUS", brief: "Geospatial intelligence" },
+  { fullName: "Doom-Forge/mazhai-cover", name: "Mazhai Cover", brief: "Micro-insurance pricing" },
+  { fullName: "Doom-Forge/pricingpulse", name: "PricingPulse", brief: "Dynamic pricing simulator" },
+  { fullName: "Doom-Forge/veera-footwear", name: "Veera Footwear", brief: "Borrowed-audience campaign" },
+  { fullName: "Doom-Forge/janus", name: "JANUS", brief: "Geospatial intelligence" },
 ] as const;
 type Announcement = { id: string; title: string; body: string; createdAt: string };
 type ReleasedFeedbackItem = { problemUnderstanding?: string; remediation?: string; innovationImpact?: string; overall?: string; criteriaScores?: Array<{ criterionId: string; comment: string }> };

@@ -59,12 +59,20 @@ async function imported() {
 }
 async function finalized() {
 	const team = await imported();
-	await db.prepare("INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(91,'180DC-VIT-CHENNAI/mazhai-cover',0,'main')").run();
+	await db.prepare("INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(91,'Doom-Forge/mazhai-cover',0,'main')").run();
 	await db.prepare("INSERT INTO team_repositories(team_id,repository_id,actor) VALUES(?,91,'organizer:test')").bind(team!.id).run();
 	await db.prepare("UPDATE teams SET track_finalized=1 WHERE id=?").bind(team!.id).run();
 	return team;
 }
 describe("Unstop participant onboarding", () => {
+	it("keeps existing team access keys stable across an organization rename", async () => {
+		const team = await finalized();
+		const existingKey = await teamAccessKey(env, team!.id);
+		env.ORG_NAME = "Doom-Forge";
+		env.ORG_KEY_CONTEXT = "Pilot";
+
+		expect(await teamAccessKey(env, team!.id)).toBe(existingKey);
+	});
 	it("creates hashed team code and pending lead-only invitation when sender is absent", async () => {
 		const team = await imported();
 		const stored = await db

@@ -81,7 +81,7 @@ beforeAll(async () => {
     )
     .run();
   await db.prepare(
-    "INSERT INTO github_repositories(id,full_name,private,default_branch,accessible) VALUES(2,'180DC-VIT-CHENNAI/mazhai-cover',0,'main',1)",
+    "INSERT INTO github_repositories(id,full_name,private,default_branch,accessible) VALUES(2,'Doom-Forge/mazhai-cover',0,'main',1)",
   ).run();
   for (const [teamId, memberId, rosterId, email, githubId, repoId] of [
     ['team-a', 'member-a', 'roster-a', 'lead-a@example.test', 9001, 2],

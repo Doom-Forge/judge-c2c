@@ -213,7 +213,7 @@ it("does not run a newly added but unapproved matrix row", async () => {
 	await env.DB.prepare("INSERT INTO matrix_repositories VALUES(?,?,?,?,?,?)")
 		.bind(
 			repositoryId,
-			"180DC-VIT-CHENNAI/janus",
+			"Doom-Forge/janus",
 			"a".repeat(40),
 			"unreviewed-v1",
 			"d".repeat(64),
@@ -225,7 +225,7 @@ it("does not run a newly added but unapproved matrix row", async () => {
 			"b".repeat(40),
 			"2026-11-04T10:00:00Z",
 			repositoryId,
-			"180DC-VIT-CHENNAI/janus",
+			"Doom-Forge/janus",
 		),
 		env,
 		"unreviewed-janus",
@@ -244,7 +244,7 @@ it("requests the default reviewer for a verified unconfigured PR without queuing
 		"b".repeat(40),
 		"2026-11-04T10:00:00Z",
 		1442222462,
-		"180DC-VIT-CHENNAI/mazhai-cover",
+		"Doom-Forge/mazhai-cover",
 	);
 	let reviewerRequests = 0;
 	let clientRequests = 0;
@@ -257,7 +257,7 @@ it("requests the default reviewer for a verified unconfigured PR without queuing
 		clientRequests++;
 		expect(repository).toEqual({
 			repository_id: 1442222462,
-			full_name: "180DC-VIT-CHENNAI/mazhai-cover",
+			full_name: "Doom-Forge/mazhai-cover",
 			installation_id: 42,
 		});
 		return {
@@ -323,13 +323,13 @@ it("rejects unconfigured PR identity mismatches before requesting a reviewer", a
 		"b".repeat(40),
 		"2026-11-04T10:00:00Z",
 		1442222462,
-		"180DC-VIT-CHENNAI/mazhai-cover",
+		"Doom-Forge/mazhai-cover",
 	);
 	const wrongId = payload(
 		"b".repeat(40),
 		"2026-11-04T10:00:00Z",
 		1442222499,
-		"180DC-VIT-CHENNAI/mazhai-cover",
+		"Doom-Forge/mazhai-cover",
 	);
 	const wrongInstallation = { ...valid, installation: { id: 999 } };
 	const wrongBase = {
@@ -401,7 +401,7 @@ it("keeps the two historical pilots read-only and rejects new PR intake", async 
 	expect(jobs).toHaveLength(0);
 });
 it("deduplicates exact webhook delivery and retains the newest captured PR head", async () => {
-	const pr = (sha: string, date: string) => payload(sha, date, 1442222462, "180DC-VIT-CHENNAI/mazhai-cover");
+	const pr = (sha: string, date: string) => payload(sha, date, 1442222462, "Doom-Forge/mazhai-cover");
 	const first = await acceptMatrixPR(pr("a".repeat(40), "2026-11-04T10:00:00Z"), env, "head-one", "hash-one", undefined, { publishCheck: async () => undefined });
 	expect(first.status).toBe(202);
 	expect((await acceptMatrixPR(pr("a".repeat(40), "2026-11-04T10:00:00Z"), env, "head-one", "hash-one")).status).toBe(202);
@@ -420,7 +420,7 @@ it("denies retry and diagnostic execution without an approved profile", async ()
 	const diagnostic = await matrixApi(new Request("https://test/api/matrix/diagnostic", { method: "POST", headers, body: JSON.stringify({ repository: "noyyal-treasury", files: [] }) }), env);
 	expect(diagnostic.status).toBe(403);
 	const profileRunId = "f".repeat(64);
-	await env.DB.prepare("INSERT INTO matrix_runs(id,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,state) VALUES(?,1442222465,'180DC-VIT-CHENNAI/janus',4,?,?,?,?,?,'COMPLETED')")
+	await env.DB.prepare("INSERT INTO matrix_runs(id,repository_id,full_name,pr_number,head_sha,baseline_sha,matrix_version,matrix_digest,image_uri,state) VALUES(?,1442222465,'Doom-Forge/janus',4,?,?,?,?,?,'COMPLETED')")
 		.bind(profileRunId, "b".repeat(40), "a".repeat(40), "unapproved-v1", "d".repeat(64), "registry.cloudflare.com/fixture/image@sha256:" + "2".repeat(64)).run();
 	const unapprovedRetry = await matrixApi(new Request("https://test/api/matrix/runs/" + profileRunId + "/retry", { method: "POST", headers }), env);
 	expect(unapprovedRetry.status).toBe(409);

@@ -1,7 +1,7 @@
 # Doomforge — 180DC Cloudflare container judge
 
 Dashboard: <https://doombot.180dcvitc.org/>.
-Organization: <https://github.com/180DC-VIT-CHENNAI/>.
+Organization: <https://github.com/Doom-Forge/>.
 Cloudflare account: `Technical.vitc@180dc.org's Account`.
 
 The production dashboard is served by the `doomforge-arena` Worker. It retains

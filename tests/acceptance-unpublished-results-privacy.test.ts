@@ -126,7 +126,7 @@ describe("unpublished result privacy", () => {
 	});
 
 	it("limits a published participant projection to released score and feedback fields", async () => {
-		await env.ORG_DB!.prepare("INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(1,'180DC-VIT-CHENNAI/mazhai-cover',0,'main')").run();
+		await env.ORG_DB!.prepare("INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(1,'Doom-Forge/mazhai-cover',0,'main')").run();
 		await env.ORG_DB!.prepare("INSERT INTO team_repositories(team_id,repository_id,actor) VALUES('team-a',1,'organizer:test')").run();
 		await env.ORG_DB!.prepare("UPDATE teams SET lead_email='lead@example.test',track_finalized=1 WHERE id='team-a'").run();
 		await env.ORG_DB!.prepare("INSERT INTO team_roster_members(id,team_id,hackathon_id,display_name,email) VALUES('lead-roster','team-a','initial','Team A lead','lead@example.test')").run();

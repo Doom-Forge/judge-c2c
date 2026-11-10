@@ -51,7 +51,7 @@ it('loads only the fixed diagnostic path at each exact public repository SHA', a
       ['mazhai-cover', 'pricingpulse', 'veera-footwear', 'janus'].map((repo) => [repo, sha]),
     ));
     expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/180DC-VIT-CHENNAI/mazhai-cover/' + sha + '/src/diagnostic.py');
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/Doom-Forge/mazhai-cover/' + sha + '/src/diagnostic.py');
     expect(result.janus).toEqual({ sha, code: 'print("CONTAINER_DIAGNOSTIC_OK")\n' });
   } finally {
     vi.unstubAllGlobals();

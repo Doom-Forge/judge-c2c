@@ -58,7 +58,7 @@ beforeEach(async () => {
 		.run();
 	await db
 		.prepare(
-			"INSERT INTO github_repositories(id,full_name,private,default_branch,accessible) VALUES(1,'180DC-VIT-CHENNAI/veera-footwear',0,'main',1)",
+			"INSERT INTO github_repositories(id,full_name,private,default_branch,accessible) VALUES(1,'Doom-Forge/veera-footwear',0,'main',1)",
 		)
 		.run();
 	await db

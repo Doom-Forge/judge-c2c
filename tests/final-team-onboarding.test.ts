@@ -20,7 +20,7 @@ beforeEach(async () => {
   await migrate(db);
   env = { ORG_DB: db, ORG_VAULT_KEY: "12".repeat(32), ORG_NAME: "Doomforge", ORG_PUBLIC_ORIGIN: "https://judge.test", TEAM_EMAIL_SENDER: { fetch: async (request: RequestInfo | URL) => { const payload = await new Request(request).json() as { to: string; body: string }; messages.push(payload); return Response.json({ accepted: true }); } } as Fetcher } as Env;
   await importTeams(env, services, "organizer:test", { csv: "team_name,participant_name,email,team_lead_email,team_status\nAlpha,Alice,alice@example.test,lead@example.test,ACTIVE\nAlpha,Bob,bob@example.test,lead@example.test,ACTIVE", commit: true });
-  await db.prepare("INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(11,'180DC-VIT-CHENNAI/mazhai-cover',0,'main'),(12,'180DC-VIT-CHENNAI/pricingpulse',0,'main'),(13,'180DC-VIT-CHENNAI/veera-footwear',0,'main'),(14,'180DC-VIT-CHENNAI/janus',0,'main')").run();
+  await db.prepare("INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(11,'Doom-Forge/mazhai-cover',0,'main'),(12,'Doom-Forge/pricingpulse',0,'main'),(13,'Doom-Forge/veera-footwear',0,'main'),(14,'Doom-Forge/janus',0,'main')").run();
 });
 afterEach(async () => mf.dispose());
 

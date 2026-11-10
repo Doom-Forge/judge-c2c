@@ -74,7 +74,7 @@ beforeEach(async () => {
 		commit: true,
 	});
 	teamId = imported.teams[0]!.id;
-	await db.prepare("INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(91,'180DC-VIT-CHENNAI/mazhai-cover',0,'main')").run();
+	await db.prepare("INSERT INTO github_repositories(id,full_name,private,default_branch) VALUES(91,'Doom-Forge/mazhai-cover',0,'main')").run();
 	await db.prepare("INSERT INTO team_repositories(team_id,repository_id,actor) VALUES(?,91,'organizer:test')").bind(teamId).run();
 	await db.prepare("UPDATE teams SET track_finalized=1 WHERE id=?").bind(teamId).run();
 	teamKey = (await teamAccessKey(env, teamId))!;

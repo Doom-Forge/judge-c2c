@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("authenticated participant sees live options, deadlines, and released results only", async ({ page }) => {
 	let resultsUnavailable = true;
-	const selectedTrack = { repositoryId: 10, fullName: "180DC-VIT-CHENNAI/mazhai-cover" };
+	const selectedTrack = { repositoryId: 10, fullName: "Doom-Forge/mazhai-cover" };
 	await page.route("**/api/organization/status", (route) =>
 		route.fulfill({
 			contentType: "application/json",
@@ -26,7 +26,7 @@ test("authenticated participant sees live options, deadlines, and released resul
 				return route.fulfill({
 					json: {
 						published: true,
-						results: [{ teamId: "team-a", finalScore: 82, status: "READY", track: "180DC-VIT-CHENNAI/mazhai-cover", analysisAverage: 84, analysisJudgeCount: 2, engineeringAverage: 80, engineeringJudgeCount: 1, feedback: { analysis: [{ problemUnderstanding: "Strong problem framing.", remediation: "The fix addresses the root cause.", innovationImpact: "Clear impact.", overall: "Well supported by evidence." }], engineering: [{ overall: "Clean implementation.", criteriaScores: [{ criterionId: "tests", comment: "Add edge case coverage." }] }] } }],
+						results: [{ teamId: "team-a", finalScore: 82, status: "READY", track: "Doom-Forge/mazhai-cover", analysisAverage: 84, analysisJudgeCount: 2, engineeringAverage: 80, engineeringJudgeCount: 1, feedback: { analysis: [{ problemUnderstanding: "Strong problem framing.", remediation: "The fix addresses the root cause.", innovationImpact: "Clear impact.", overall: "Well supported by evidence." }], engineering: [{ overall: "Clean implementation.", criteriaScores: [{ criterionId: "tests", comment: "Add edge case coverage." }] }] } }],
 						ranking: [{
 							teamId: "team-a",
 							finalScore: 82,
@@ -66,7 +66,7 @@ test("authenticated participant sees live options, deadlines, and released resul
 				githubLinked: false,
 				currentMember: { displayName: "Participant A", email: "a@example.com", githubLogin: null, githubLinked: false },
 				members: [{ displayName: "Participant A", email: "a@example.com", githubLogin: null, githubLinked: false }],
-				submissions: [{ repository_id: 10, pr_number: 42, status: "OPEN", github_updated_at: "2026-11-05T12:00:00.000Z", full_name: "180DC-VIT-CHENNAI/mazhai-cover" }],
+				submissions: [{ repository_id: 10, pr_number: 42, status: "OPEN", github_updated_at: "2026-11-05T12:00:00.000Z", full_name: "Doom-Forge/mazhai-cover" }],
 				evaluations: [],
 			},
 		});
@@ -74,14 +74,14 @@ test("authenticated participant sees live options, deadlines, and released resul
 	await page.route("**/api/organization/announcements", route => route.fulfill({ json: { announcements: [{ id: "announcement-1", title: "Round 2 is open", body: "Submit your analysis document by the listed deadline.", createdAt: "2026-11-01T12:00:00.000Z" }] } }));
 	await page.goto("/");
 	await expect(page.getByRole("heading", { name: "Welcome, Team A" })).toBeVisible();
-	await expect(page.getByRole("link", { name: "180DC-VIT-CHENNAI/mazhai-cover" })).toHaveAttribute("href", "https://github.com/180DC-VIT-CHENNAI/mazhai-cover");
+	await expect(page.getByRole("link", { name: "Doom-Forge/mazhai-cover" })).toHaveAttribute("href", "https://github.com/Doom-Forge/mazhai-cover");
 	await expect(page.getByRole("button", { name: /Confirm team repository/ })).toHaveCount(0);
 	await page.getByRole("button", { name: "Reveal team key" }).click();
 	await expect(page.getByText("TEAM-KEY-123")).toBeVisible();
 	await page.getByRole("link", { name: "My submission" }).click();
 	await expect(page.getByRole("heading", { name: "My submission" })).toBeVisible();
 	await expect(page.getByText("12/1/2026", { exact: false })).toBeVisible();
-	await expect(page.getByRole("link", { name: /mazhai-cover #42/ })).toHaveAttribute("href", "https://github.com/180DC-VIT-CHENNAI/mazhai-cover/pull/42");
+	await expect(page.getByRole("link", { name: /mazhai-cover #42/ })).toHaveAttribute("href", "https://github.com/Doom-Forge/mazhai-cover/pull/42");
 	await expect(page.getByRole("heading", { name: "Team members" })).toHaveCount(0);
 	await expect(page.getByText("Round 2 is open")).toHaveCount(0);
 	await page.getByRole("link", { name: "Evaluation" }).click();
@@ -103,10 +103,10 @@ test("authenticated participant sees live options, deadlines, and released resul
 });
 
 const repositories = [
-	{ repositoryId: 10, fullName: "180DC-VIT-CHENNAI/mazhai-cover" },
-	{ repositoryId: 11, fullName: "180DC-VIT-CHENNAI/pricingpulse" },
-	{ repositoryId: 12, fullName: "180DC-VIT-CHENNAI/veera-footwear" },
-	{ repositoryId: 13, fullName: "180DC-VIT-CHENNAI/janus" },
+	{ repositoryId: 10, fullName: "Doom-Forge/mazhai-cover" },
+	{ repositoryId: 11, fullName: "Doom-Forge/pricingpulse" },
+	{ repositoryId: 12, fullName: "Doom-Forge/veera-footwear" },
+	{ repositoryId: 13, fullName: "Doom-Forge/janus" },
 ];
 
 test("team lead must confirm one repository before linking GitHub or entering workspace", async ({ page }) => {

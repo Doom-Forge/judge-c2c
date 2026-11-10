@@ -32,7 +32,7 @@ export async function readDiagnosticSources(raw: unknown): Promise<Record<(typeo
     let response: Response;
     try {
       response = await fetch(
-        `https://raw.githubusercontent.com/180DC-VIT-CHENNAI/${repository}/${sha}/src/diagnostic.py`,
+        `https://raw.githubusercontent.com/Doom-Forge/${repository}/${sha}/src/diagnostic.py`,
         {
           redirect: 'manual',
           headers: { 'User-Agent': 'Doomforge-Matrix-Diagnostic', Accept: 'text/plain' },

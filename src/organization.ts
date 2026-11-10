@@ -70,13 +70,18 @@ async function vaultKey(env: Env) {
     ['encrypt', 'decrypt'],
   );
 }
+function vaultAdditionalData(env: Env) {
+  return new TextEncoder().encode(
+    env.ORG_VAULT_AAD ?? `judge-c2c:${env.ORG_NAME}`,
+  );
+}
 export async function seal(env: Env, value: unknown) {
   const iv = crypto.getRandomValues(new Uint8Array(12)),
     cipher = await crypto.subtle.encrypt(
       {
         name: 'AES-GCM',
         iv,
-        additionalData: new TextEncoder().encode('judge-c2c:' + env.ORG_NAME),
+        additionalData: vaultAdditionalData(env),
       },
       await vaultKey(env),
       new TextEncoder().encode(canonical(value)),
@@ -94,7 +99,7 @@ export async function unseal<T>(env: Env, value: string): Promise<T> {
         {
           name: 'AES-GCM',
           iv: new Uint8Array(box.iv),
-          additionalData: new TextEncoder().encode('judge-c2c:' + env.ORG_NAME),
+          additionalData: vaultAdditionalData(env),
         },
         await vaultKey(env),
         new Uint8Array(box.cipher),
@@ -1377,7 +1382,7 @@ export async function organization(
       repositories: (
         await env.ORG_DB.prepare(
           env.MATRIX_MODE === 'true'
-            ? "SELECT id,full_name,private,default_branch,accessible FROM github_repositories WHERE full_name IN ('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus') ORDER BY full_name"
+            ? "SELECT id,full_name,private,default_branch,accessible FROM github_repositories WHERE full_name IN ('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus') ORDER BY full_name"
             : 'SELECT id,full_name,private,default_branch,accessible FROM github_repositories ORDER BY full_name',
         ).all()
       ).results,

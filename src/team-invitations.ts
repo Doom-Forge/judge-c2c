@@ -34,7 +34,7 @@ async function inviteCode(env: Env, teamId: string, nonce: string) {
 			"HMAC",
 			key,
 			new TextEncoder().encode(
-				`team-invite:${env.ORG_NAME}:${teamId}:${nonce}`,
+				`team-invite:${env.ORG_KEY_CONTEXT ?? env.ORG_NAME}:${teamId}:${nonce}`,
 			),
 		),
 	);

@@ -20,10 +20,10 @@ const json = (value: unknown, status = 200) =>
 const eligible =
 	"i.revoked_at IS NULL AND (i.role<>'participant' OR (EXISTS(SELECT 1 FROM teams t WHERE t.id=i.team_id AND t.status='ACTIVE') AND ((i.team_member_id IS NOT NULL AND EXISTS(SELECT 1 FROM team_members m WHERE m.id=i.team_member_id AND m.team_id=i.team_id AND m.active=1)) OR (i.team_member_id IS NULL AND i.team_roster_member_id IS NOT NULL AND EXISTS(SELECT 1 FROM team_roster_members r LEFT JOIN team_members linked ON linked.id=r.linked_team_member_id WHERE r.id=i.team_roster_member_id AND r.team_id=i.team_id AND r.active=1 AND (r.linked_team_member_id IS NULL OR linked.active=1))) OR (i.team_member_id IS NULL AND i.team_roster_member_id IS NULL))))";
 const participantTracks = [
-	"180DC-VIT-CHENNAI/mazhai-cover",
-	"180DC-VIT-CHENNAI/pricingpulse",
-	"180DC-VIT-CHENNAI/veera-footwear",
-	"180DC-VIT-CHENNAI/janus",
+	"Doom-Forge/mazhai-cover",
+	"Doom-Forge/pricingpulse",
+	"Doom-Forge/veera-footwear",
+	"Doom-Forge/janus",
 ] as const;
 export async function credentialIdentity(env: Env, token: string) {
 	return env
@@ -355,7 +355,7 @@ export async function participantConsole(
 			return json({ error: "INVALID_INPUT" }, 400);
 		}
 		const requested = await db.prepare(
-			"SELECT id,full_name FROM github_repositories WHERE id=? AND accessible=1 AND full_name IN('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus')",
+			"SELECT id,full_name FROM github_repositories WHERE id=? AND accessible=1 AND full_name IN('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus')",
 		).bind(repositoryId).first<{ id: number; full_name: string }>();
 		if (!requested) return json({ error: "TRACK_NOT_ALLOWED" }, 403);
 		const current = await db.prepare(
@@ -373,8 +373,8 @@ export async function participantConsole(
 			const saved = await db.batch([
 				db.prepare("INSERT INTO audit(action,entity,actor,changes) VALUES('team.track_selected',?,?,?)").bind(session.team_id, actor, JSON.stringify({ eventId, previousRepositoryIds: current.repository_id === null ? [] : [current.repository_id], repositoryId: requested.id, fullName: requested.full_name })),
 				db.prepare("UPDATE team_repositories SET active=0,actor=?,assigned_at=CURRENT_TIMESTAMP WHERE team_id=? AND active=1 AND EXISTS(SELECT 1 FROM audit WHERE action='team.track_selected' AND entity=? AND actor=? AND json_extract(changes,'$.eventId')=?)").bind(actor, session.team_id, session.team_id, actor, eventId),
-				db.prepare("INSERT INTO team_repositories(team_id,repository_id,actor) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM github_repositories r WHERE r.id=? AND r.accessible=1 AND r.full_name IN('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus')) AND EXISTS(SELECT 1 FROM audit WHERE action='team.track_selected' AND entity=? AND actor=? AND json_extract(changes,'$.eventId')=?) ON CONFLICT(team_id,repository_id) DO UPDATE SET active=1,actor=excluded.actor,assigned_at=CURRENT_TIMESTAMP").bind(session.team_id, requested.id, actor, requested.id, session.team_id, actor, eventId),
-				db.prepare("UPDATE teams SET track_finalized=1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND track_finalized=0 AND status='ACTIVE' AND (SELECT count(*) FROM team_repositories WHERE team_id=? AND active=1)=1 AND EXISTS(SELECT 1 FROM team_repositories tr JOIN github_repositories r ON r.id=tr.repository_id WHERE tr.team_id=? AND tr.repository_id=? AND tr.active=1 AND r.accessible=1 AND r.full_name IN('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus')) AND EXISTS(SELECT 1 FROM audit WHERE action='team.track_selected' AND entity=? AND actor=? AND json_extract(changes,'$.eventId')=?)").bind(session.team_id, session.team_id, session.team_id, requested.id, session.team_id, actor, eventId),
+				db.prepare("INSERT INTO team_repositories(team_id,repository_id,actor) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM github_repositories r WHERE r.id=? AND r.accessible=1 AND r.full_name IN('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus')) AND EXISTS(SELECT 1 FROM audit WHERE action='team.track_selected' AND entity=? AND actor=? AND json_extract(changes,'$.eventId')=?) ON CONFLICT(team_id,repository_id) DO UPDATE SET active=1,actor=excluded.actor,assigned_at=CURRENT_TIMESTAMP").bind(session.team_id, requested.id, actor, requested.id, session.team_id, actor, eventId),
+				db.prepare("UPDATE teams SET track_finalized=1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND track_finalized=0 AND status='ACTIVE' AND (SELECT count(*) FROM team_repositories WHERE team_id=? AND active=1)=1 AND EXISTS(SELECT 1 FROM team_repositories tr JOIN github_repositories r ON r.id=tr.repository_id WHERE tr.team_id=? AND tr.repository_id=? AND tr.active=1 AND r.accessible=1 AND r.full_name IN('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus')) AND EXISTS(SELECT 1 FROM audit WHERE action='team.track_selected' AND entity=? AND actor=? AND json_extract(changes,'$.eventId')=?)").bind(session.team_id, session.team_id, session.team_id, requested.id, session.team_id, actor, eventId),
 			]);
 			if (!saved[0]?.meta.changes) return json({ error: "SERVICE_UNAVAILABLE" }, 503);
 			if (!saved[3]?.meta.changes) return json({ error: "TRACK_FINALIZED" }, 409);
@@ -459,16 +459,26 @@ export async function participantConsole(
 		if (!team) return json({ error: "UNAUTHORIZED" }, 401);
 		const track = await db
 			.prepare(
-				"SELECT r.id,r.full_name FROM team_repositories t JOIN github_repositories r ON r.id=t.repository_id WHERE t.team_id=? AND t.active=1 ORDER BY t.assigned_at DESC LIMIT 1",
+				env.MATRIX_MODE === "true"
+					? "SELECT r.id,r.full_name FROM team_repositories t JOIN github_repositories r ON r.id=t.repository_id WHERE t.team_id=? AND t.active=1 AND r.accessible=1 AND r.full_name IN(?,?,?,?) ORDER BY t.assigned_at DESC LIMIT 1"
+					: "SELECT r.id,r.full_name FROM team_repositories t JOIN github_repositories r ON r.id=t.repository_id WHERE t.team_id=? AND t.active=1 ORDER BY t.assigned_at DESC LIMIT 1",
 			)
-			.bind(session.team_id)
+			.bind(
+				session.team_id,
+				...(env.MATRIX_MODE === "true" ? participantTracks : []),
+			)
 			.first<{ id: number; full_name: string }>();
 		const submissions = (
 			await db
 				.prepare(
-					"SELECT s.repository_id,s.pr_number,s.head_sha,s.latest_run_id,s.status,s.issue_numbers,s.github_updated_at,r.full_name FROM submissions s JOIN github_repositories r ON r.id=s.repository_id WHERE s.team_id=? ORDER BY s.github_updated_at DESC LIMIT 100",
+					env.MATRIX_MODE === "true"
+						? "SELECT s.repository_id,s.pr_number,s.head_sha,s.latest_run_id,s.status,s.issue_numbers,s.github_updated_at,r.full_name FROM submissions s JOIN github_repositories r ON r.id=s.repository_id WHERE s.team_id=? AND EXISTS(SELECT 1 FROM team_repositories tr JOIN github_repositories active_repo ON active_repo.id=tr.repository_id WHERE tr.team_id=s.team_id AND tr.repository_id=s.repository_id AND tr.active=1 AND active_repo.accessible=1 AND active_repo.full_name IN(?,?,?,?)) ORDER BY s.github_updated_at DESC LIMIT 100"
+						: "SELECT s.repository_id,s.pr_number,s.head_sha,s.latest_run_id,s.status,s.issue_numbers,s.github_updated_at,r.full_name FROM submissions s JOIN github_repositories r ON r.id=s.repository_id WHERE s.team_id=? ORDER BY s.github_updated_at DESC LIMIT 100",
 				)
-				.bind(session.team_id)
+				.bind(
+					session.team_id,
+					...(env.MATRIX_MODE === "true" ? participantTracks : []),
+				)
 				.all()
 		).results;
 		const evaluations = (

@@ -318,7 +318,7 @@ export async function matrixApi(request: Request, env: Env) {
 		const [repositories, runs] = await Promise.all([
 			db
 				.prepare(
-				"SELECT g.id,g.full_name,m.baseline_sha,m.matrix_version,m.matrix_digest,m.image_uri FROM github_repositories g LEFT JOIN matrix_repositories m ON m.repository_id=g.id WHERE g.accessible=1 AND g.full_name IN ('180DC-VIT-CHENNAI/mazhai-cover','180DC-VIT-CHENNAI/pricingpulse','180DC-VIT-CHENNAI/veera-footwear','180DC-VIT-CHENNAI/janus')",
+				"SELECT g.id,g.full_name,m.baseline_sha,m.matrix_version,m.matrix_digest,m.image_uri FROM github_repositories g LEFT JOIN matrix_repositories m ON m.repository_id=g.id WHERE g.accessible=1 AND g.full_name IN ('Doom-Forge/mazhai-cover','Doom-Forge/pricingpulse','Doom-Forge/veera-footwear','Doom-Forge/janus')",
 				)
 				.all<{
 					id: number;

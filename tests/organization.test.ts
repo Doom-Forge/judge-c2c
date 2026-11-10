@@ -217,6 +217,26 @@ describe('protected organization setup', () => {
       unseal({ ...env, ORG_VAULT_KEY: '34'.repeat(32) }, encrypted),
     ).rejects.toThrow();
   });
+  it('keeps existing app credentials decryptable when the GitHub organization changes', async () => {
+    const oldOrganizationEnv = { ...env, ORG_NAME: '180DC-VIT-CHENNAI' };
+    const encrypted = await seal(oldOrganizationEnv, {
+      privateKey: 'existing-app-key',
+    });
+    const movedOrganizationEnv = {
+      ...env,
+      ORG_VAULT_AAD: 'judge-c2c:180DC-VIT-CHENNAI',
+    };
+
+    await expect(unseal(movedOrganizationEnv, encrypted)).resolves.toEqual({
+      privateKey: 'existing-app-key',
+    });
+    await expect(
+      unseal(
+        { ...movedOrganizationEnv, ORG_VAULT_AAD: 'judge-c2c:Doom-Forge' },
+        encrypted,
+      ),
+    ).rejects.toThrow();
+  });
   it('creates least-privilege organization manifests and rejects state replay or another browser', async () => {
     const start = await body(
       await organization(

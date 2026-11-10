@@ -191,13 +191,13 @@ describe("participant repository selection through the Worker fetch surface", ()
 				repositories: [
 					{
 						repositoryId: 10,
-						fullName: "180DC-VIT-CHENNAI/mazhai-cover",
+						fullName: "Doom-Forge/mazhai-cover",
 					},
 					{
 						repositoryId: 11,
-						fullName: "180DC-VIT-CHENNAI/pricingpulse",
+						fullName: "Doom-Forge/pricingpulse",
 					},
-					{ repositoryId: 13, fullName: "180DC-VIT-CHENNAI/janus" },
+					{ repositoryId: 13, fullName: "Doom-Forge/janus" },
 				],
 			},
 		});
@@ -205,7 +205,7 @@ describe("participant repository selection through the Worker fetch surface", ()
 
 	it("finalizes the lead's first selection even when an engineering review draft exists", async () => {
 		const repositoryB = await env.ORG_DB!.prepare(
-			"SELECT id FROM github_repositories WHERE full_name='180DC-VIT-CHENNAI/mazhai-cover'",
+			"SELECT id FROM github_repositories WHERE full_name='Doom-Forge/mazhai-cover'",
 		).first<{ id: number }>();
 		await env.ORG_DB!.prepare("UPDATE team_repositories SET active=0 WHERE team_id='team-a'").run();
 		await env.ORG_DB!.prepare(
@@ -229,7 +229,7 @@ describe("participant repository selection through the Worker fetch surface", ()
 		);
 		expect([selected.status, await selected.json(), rejectedSwitch.status, await rejectedSwitch.json()]).toEqual([
 			200,
-			{ track: { repositoryId: repositoryB!.id, fullName: "180DC-VIT-CHENNAI/mazhai-cover" } },
+			{ track: { repositoryId: repositoryB!.id, fullName: "Doom-Forge/mazhai-cover" } },
 			409,
 			{ error: "TRACK_FINALIZED" },
 		]);
@@ -238,7 +238,7 @@ describe("participant repository selection through the Worker fetch surface", ()
 
 	it("allows the lead to finalize their first selection after an engineering final review", async () => {
 		const repositoryB = await env.ORG_DB!.prepare(
-			"SELECT id FROM github_repositories WHERE full_name='180DC-VIT-CHENNAI/mazhai-cover'",
+			"SELECT id FROM github_repositories WHERE full_name='Doom-Forge/mazhai-cover'",
 		).first<{ id: number }>();
 		await env.ORG_DB!.prepare("UPDATE team_repositories SET active=0 WHERE team_id='team-a'").run();
 		await env.ORG_DB!.prepare(
@@ -255,7 +255,7 @@ describe("participant repository selection through the Worker fetch surface", ()
 			env,
 			ctx,
 		);
-		expect([response.status, await response.json()]).toEqual([200, { track: { repositoryId: repositoryB!.id, fullName: "180DC-VIT-CHENNAI/mazhai-cover" } }]);
+		expect([response.status, await response.json()]).toEqual([200, { track: { repositoryId: repositoryB!.id, fullName: "Doom-Forge/mazhai-cover" } }]);
 	});
 
 	it("denies track options to organizer and anonymous sessions", async () => {
@@ -320,7 +320,7 @@ describe("participant repository selection through the Worker fetch surface", ()
 			cacheControl: "no-store",
 			track: {
 				repositoryId: 11,
-				fullName: "180DC-VIT-CHENNAI/pricingpulse",
+				fullName: "Doom-Forge/pricingpulse",
 			},
 			active: [{ repository_id: 11 }],
 			dashboardStatus: 428,
@@ -329,7 +329,7 @@ describe("participant repository selection through the Worker fetch surface", ()
 				eventId: expect.any(String),
 				previousRepositoryIds: [14],
 				repositoryId: 11,
-				fullName: "180DC-VIT-CHENNAI/pricingpulse",
+				fullName: "Doom-Forge/pricingpulse",
 			},
 		});
 	});
@@ -487,7 +487,7 @@ describe("participant repository selection through the Worker fetch surface", ()
 		]).toEqual([
 			409,
 			200,
-			{ track: { repositoryId: 11, fullName: "180DC-VIT-CHENNAI/pricingpulse" } },
+			{ track: { repositoryId: 11, fullName: "Doom-Forge/pricingpulse" } },
 			[{ repository_id: 11 }],
 		]);
 	});
@@ -510,7 +510,7 @@ describe("participant repository selection through the Worker fetch surface", ()
 			.run();
 		await db
 			.prepare("UPDATE github_repositories SET full_name=? WHERE id=11")
-			.bind("180DC-VIT-CHENNAI/mazhai-cover")
+			.bind("Doom-Forge/mazhai-cover")
 			.run();
 		operation.release();
 		const response = await selection;
@@ -532,13 +532,13 @@ describe("participant repository selection through the Worker fetch surface", ()
 			status: 200,
 			track: {
 				repositoryId: 11,
-				fullName: "180DC-VIT-CHENNAI/pricingpulse",
+				fullName: "Doom-Forge/pricingpulse",
 			},
 			audit: {
 				eventId: expect.any(String),
 				previousRepositoryIds: [14],
 				repositoryId: 11,
-				fullName: "180DC-VIT-CHENNAI/pricingpulse",
+				fullName: "Doom-Forge/pricingpulse",
 			},
 			active: [{ repository_id: 11 }],
 		});
